@@ -139,7 +139,13 @@ jobs:
           if [ ! -s notes.md ]; then
             echo "茶话科比版 v${ver}：与桌面端同源的安卓移植版。" > notes.md
           fi
-          gh release create "$tag" dist-release/* \
-            --title "茶话科比版 v${ver}" \
-            --notes-file notes.md
+          # Release 已存在（手工换过附件等）时 create 会报错退出导致附件不更新；
+          # 已存在则用 --clobber 覆盖同名附件，保证重打 tag 后产物真的被替换
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" dist-release/* --clobber
+          else
+            gh release create "$tag" dist-release/* \
+              --title "茶话科比版 v${ver}" \
+              --notes-file notes.md
+          fi
           echo "Release: https://github.com/${{ github.repository }}/releases/tag/${tag}" >> "$GITHUB_STEP_SUMMARY"
