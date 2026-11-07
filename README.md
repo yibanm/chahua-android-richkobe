@@ -1,82 +1,101 @@
-# Chahua-Android
+# 茶话科比版 — 茶话的安卓客户端（桌面端 Tauri 移植，界面与桌面版一致）
 
-简体中文 | [English](README.en.md)
+把茶话桌面客户端（Tauri 壳 + 上游 Angular/Ionic 前端）几乎原封不动移植到安卓的独立客户端。连接**官方服务器**，账号、好友、群组、聊天记录与网页版、桌面版完全一致。包名 `com.richkobe.chahua`，与旧版「茶话」（`net.paigu.chahua`）可并存。
 
-![Min SDK](https://img.shields.io/badge/minSdk-24-brightgreen)
-![Target SDK](https://img.shields.io/badge/targetSdk-36-brightgreen)
+亮点：与桌面版同源的完整界面、账号密码直登、防撤回本地归档、后台保活收消息、通知默认横幅加铃声。
 
-[茶话](https://github.com/chahua-im/chahua)的开源 Android 客户端，注入了一些了❤️来制作~
+## 功能特性
 
-关于茶话：[茶话](https://github.com/chahua-im/chahua)是一个即时通讯平台，介个仓库实现了完~整的 Android 客户端：覆盖群聊、话题、私聊、好友、表情包等核心聊天场景，提供后台消息通知、多媒体消息、消息管理等功能。
+### 登录与账号
 
-## 已实现的功能
+- **账号密码登录**：用论坛用户名和密码直接登录，无需导出令牌（手机读不到浏览器登录态，这是安卓的主登录方式）。
+- **手动登录**：粘贴 JWT 令牌或带令牌的入口链接作为备用途径。
+- **登录状态长期保留**：登录一次即可，除非主动退出。
 
-- **聊天**：群聊、话题（Threads）、私聊（DM）、好友列表与好友验证
-- **消息**：回复、编辑、撤回、删除、引用、复制链接、置顶、表态（Reactions）、保存消息、消息搜索、@ 提及
-- **多媒体**：图片、视频（发送前可压缩）、语音消息、文件，支持图片/视频查看与保存
-- **表情与贴纸**：内置 Emoji 面板、贴纸包订阅与收藏、自建表情包、快捷表态栏
-- **群组管理**：创建群聊、群资料编辑、群头像、成员管理、邀请链接/邀请码入群、免打扰、群内媒体与文件浏览
-- **界面**：深色/浅色/跟随系统、多套主题色与自定义颜色、字号调节、简中/繁中/英文、平板分屏适配
-- **通知与后台**：新消息通知、常驻通知开关、忽略电池优化、实时连接状态与延迟显示
+### 消息与通知
 
+- **后台保活收消息**：前台服务保持 WebSocket 在线，锁屏或切走应用仍能收到新消息。
+- **通知默认带横幅和铃声**：消息通知通道为高优先级；首次启动会请求通知权限与电池优化豁免，建议都允许。
+- **防撤回（可选，默认关）**：设置 → 聊天设置打开后，被撤回的消息在本机保留原文，灰字并标红色「已撤回」；文字与图片视频存本地，卸载不清数据则仍在。
+- **聊天链接可点击**：消息里的网址用系统浏览器打开；图片视频预览在应用内。
 
-## 下载
+### 桌面同源体验
 
-前往 [GitHub Releases](https://github.com/chahua-im/chahua-android/releases) 下载最新版 APK。
+- 界面、交互、主题与桌面版一致（上游 Angular/Ionic 前端原样移植）。
+- **更换头像**：设置页跳论坛头像设置页（头像由论坛统一管理）。
+- **检查更新**：设置页查新版本并跳下载页；更新信息读本仓库，经国内镜像通道获取。
+- **开源项目入口**：设置页打开本仓库（AGPL 要求公开全部改动）。
 
-应用内「设置 → 通用 → 检查更新」会通过 GitHub Releases 自动检测新版本。
+## 截图
 
-## 服务器配置
+（暂无随仓库提交的截图；安装后界面与桌面版一致，登录页为账号密码表单。）
 
-应用默认使用官方服务器：
+## 下载与安装
 
-- 默认：`https://chahui.app/_api`
+发布页：https://github.com/yibanm/chahua-android-richkobe/releases
 
+| 平台 | 文件 | 安装方式 |
+|---|---|---|
+| Android（arm64-v8a / armeabi-v7a 双架构） | `chahua-tauri-<版本>-android-universal.apk` | 允许「未知来源应用」后直接安装；一个包通吃两类设备 |
+
+1. 系统要求：Android 7.0（API 24）及以上；arm64 或 armv7 设备。
+2. 签名：统一使用主签名密钥（CN=richkobe，SHA-256 指纹 `7C:A6:3D:CA:32:DB:31:B1:DE:61:25:7E:EE:E6:0E:88:3C:04:F6:60:38:1F:8F:3E:67:8B:70:F6:6D:1F:13:B4`），覆盖安装可平滑升级。
+3. 首次打开会请求通知权限与忽略电池优化，允许后后台收消息才可靠。
+4. 与旧版「茶话」包名不同，可同机并存、互不影响。
+
+## 使用说明
+
+1. 打开后在登录页输入论坛账号密码登录；登录后直接进入消息列表。
+2. 想收后台消息：保持应用运行（可最小化），并在系统设置里允许本应用自启动/忽略电池优化。
+3. 防撤回、更换头像、检查更新、开源项目入口都在设置页。
+4. 退出登录在设置页底部，点完立即回登录页。
 
 ## 从源码构建
 
-环境要求：
-
-- Android Studio（最新稳定版） 或
-- JDK 17+
-- Android SDK（compileSdk 36，minSdk 24，targetSdk 36，支持 Android 7.0 及以上）
-
-构建步骤：
+前置：Node.js 24、Rust stable（含 aarch64-linux-android 与 armv7-linux-androideabi target）、Android SDK + NDK 27、JDK 17+。
 
 ```bash
-git clone https://github.com/chahua-im/chahua-android.git
-cd chahua-android
+cd pwa
+npm ci
+npx tauri android init   # 仅首次：生成 gen/android 工程
+npx tauri android build --apk --target aarch64 --target armv7
 ```
 
-用 Android Studio 打开项目，等待 Gradle Sync 完成后即可运行。也可以直接用命令行构建调试包：
+产物在 `pwa/src-tauri/gen/android/app/build/outputs/apk/`。签名：设置环境变量 `ANDROID_KEYSTORE_PATH/ANDROID_KEYSTORE_PASSWORD/ANDROID_KEY_ALIAS` 后 release 构建自动用主密钥签；未设置则回退 debug 签名（仅本地测试）。
 
-```bash
-./gradlew assembleDebug
-```
+注意：项目路径含中文时需在 `gen/android/gradle.properties` 加 `android.overridePathCheck=true`（本仓库已带）；CI 在 Linux 上无此问题。
 
-> Release 包需要自行配置签名，配置后执行 `./gradlew assembleRelease`。
+### 自动构建
 
-## 技术栈
-
-- **语言与构建**：Kotlin 2.2、AGP 9.2、Gradle 9.4
-- **UI**：Jetpack Compose + Material 3（Compose BOM）
-- **网络**：OkHttp 4.12、kotlinx.serialization
-- **图片加载**：Coil 3（支持 GIF / SVG / AVIF）
-- **音视频**：Media3（ExoPlayer、Transformer 视频压缩、UI）
-- **存储**：DataStore Preferences（设置与会话）、文件缓存
-- **其他**：Emoji2 表情选择器、Jetpack Window（平板分屏适配）、前台服务 + 通知
+推 main/dev 分支构建产物为 workflow artifact；推 `v*` 标签自动创建 Release 并附签名 APK（Release 已存在时覆盖同名附件）。
 
 ## 项目结构
 
 ```
-app/src/main/java/net/paigu/chahua/
-├── core/      # 应用启动、依赖注入、电池优化、平板布局适配
-├── data/      # API 封装、数据模型、会话/设置管理、更新检查、日志
-├── service/   # 后台消息服务（前台服务 + 新消息通知）
-└── ui/        # Compose 界面：登录、主页、聊天、群组、媒体、设置等
+pwa/                  移植主体：上游 Angular/Ionic 前端 + Tauri 安卓壳
+  src-tauri/          Rust 壳、capabilities、gen/android（Gradle 工程）
+  src/app/tauri/      壳能力桥接（登录接口、通知、外链、更新检查）
+app/                  旧 Kotlin 工程（M3 界面），已停止维护，仅作历史参考
+CHANGELOG.md          更新日志
+version.json          更新检查的版本信息源（CI 发版时校验与 tag 一致）
 ```
 
-## 许可
+桌面版同源代码在姊妹仓库 `yibanm/chahua-desktop-richkobe`。
 
-<!-- TODO: 确定开源协议后在此补充，例如 MIT / GPL-3.0 -->
-GNU General Public License v3.0
+## 常见问题
+
+**为什么有一条常驻通知？**
+安卓系统规定后台保活必须挂前台服务，前台服务必须有常驻通知。该通知走低打扰通道（无横幅无铃声），消息通知才走横幅+铃声通道。
+
+**后台收不到消息？**
+检查：通知权限是否允许、电池优化是否豁免、系统是否杀了后台（部分国产 ROM 需手动加白名单）。
+
+**防撤回能看到所有被撤回的消息吗？**
+不能。只保留开关打开后、且应用在线时收到撤回事件的原文；开关前或关闭期间被撤回的无原文可找回。服务器与其他设备上的删除不受影响。
+
+**和旧版「茶话」什么关系？**
+无关的独立应用（包名不同）。旧版为 M3 原生界面、后台优先级低；本版与桌面版同源。两者可并存。
+
+## 许可证
+
+AGPL-3.0-or-later，与上游一致。对外提供服务或分发二进制时须同时公开改动后的完整源代码，本仓库已公开全部改动。
