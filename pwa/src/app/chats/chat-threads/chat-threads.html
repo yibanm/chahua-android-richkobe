@@ -1,0 +1,41 @@
+<ion-list>
+  @for (root of items(); track root.id) {
+    <app-chat-list-item
+      [button]="true"
+      [entry]="{ avatar: root.sender.avatarUrl, avatarName: root.sender.name, time: root.createdAt }"
+      (selected)="open(root)">
+      <span slot="title">
+        @if (root.isDeleted) {
+          {{ 'chats.threads.title' | transloco }}
+        } @else {
+          <app-message-preview [message]="root" />
+        }
+      </span>
+      <span slot="preview">
+        {{ root.sender.name ?? root.sender.uid }} ·
+        {{ 'chats.threads.replies' | transloco: { count: root.threadInfo?.replyCount } }}
+      </span>
+    </app-chat-list-item>
+  }
+</ion-list>
+@if ((loading() && !loaded()) || opening()) {
+  <div class="page-loading"><ion-spinner /></div>
+} @else if (error()) {
+  <app-load-error
+    compact
+    [retryable]="retryable()"
+    [message]="'common.loadFailed' | transloco"
+    (retry)="load(retryMore)" />
+} @else if (loaded() && !items().length) {
+  <p class="ion-padding ion-text-center">
+    {{ 'chats.threads.empty' | transloco }}
+  </p>
+}
+@if (cursor() != null && !error()) {
+  <ion-infinite-scroll threshold="100px" (ionInfinite)="more($event)">
+    <ion-infinite-scroll-content />
+  </ion-infinite-scroll>
+}
+@if (openFailed()) {
+  <p class="ion-padding">{{ 'chats.threads.openFailed' | transloco }}</p>
+}

@@ -1,0 +1,211 @@
+:host {
+  position: relative;
+  height: 100%;
+  min-width: 0;
+}
+ion-content {
+  --padding-top: var(--ion-safe-area-top, 0px);
+  --padding-bottom: var(--ion-safe-area-bottom, 0px);
+}
+.close-button,
+.back-button {
+  width: 44px;
+  height: 44px;
+  margin: 0;
+  --padding-start: 0;
+  --padding-end: 0;
+  top: calc(var(--ion-safe-area-top, 0px) + 4px);
+}
+.close-button {
+  inset-inline-end: 4px;
+}
+.back-button {
+  inset-inline-start: 4px;
+}
+.close-button ion-icon,
+.back-button ion-icon {
+  font-size: 28px;
+}
+.profile {
+  padding-block: var(--app-profile-padding);
+}
+.profile-avatar {
+  position: relative;
+  width: 88px;
+  height: 88px;
+  margin-inline: auto;
+}
+.avatar-edit,
+.avatar-upload {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+}
+.avatar-edit {
+  padding: 0;
+  background: transparent;
+}
+.avatar-edit > ion-icon {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 16px;
+  height: 16px;
+  padding: 4px;
+  border: 2px solid var(--ion-color-light);
+  border-radius: 50%;
+  background: var(--ion-color-primary);
+  color: var(--ion-color-primary-contrast);
+}
+.avatar-upload {
+  display: grid;
+  place-items: center;
+  background: rgba(0, 0, 0, 0.45);
+  color: #fff;
+}
+.profile-name {
+  display: block;
+  position: relative;
+  min-width: 0;
+}
+.profile-title.editing {
+  visibility: hidden;
+}
+.profile-title {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+.profile p {
+  font-size: var(--app-font-caption);
+  line-height: var(--app-line-caption);
+  color: var(--ion-color-medium);
+  white-space: pre-wrap;
+}
+.quick-actions {
+  padding-bottom: 24px;
+  display: flex;
+  gap: 8px;
+}
+.quick-actions ion-button {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  height: auto;
+  min-height: var(--app-quick-action-height);
+  white-space: normal;
+  --padding-start: 4px;
+  --padding-end: 4px;
+  --padding-top: 0;
+  --padding-bottom: 0;
+  --border-radius: 12px;
+  --box-shadow: none;
+  --background: rgba(var(--ion-color-primary-rgb), 0.08);
+  --color: var(--ion-color-primary);
+  --background-activated: rgba(var(--ion-color-primary-rgb), 0.16);
+  --background-focused: rgba(var(--ion-color-primary-rgb), 0.12);
+  --background-hover: rgba(var(--ion-color-primary-rgb), 0.12);
+}
+.quick-actions span {
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding-block: 4px;
+  overflow-wrap: anywhere;
+  font-size: var(--app-font-caption);
+  line-height: var(--app-line-caption);
+  transition: color 160ms ease;
+}
+.quick-actions :is(ion-icon, ion-spinner) {
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+}
+.quick-actions ion-button:hover span {
+  color: var(--ion-color-primary-shade);
+}
+.attachments {
+  background: var(--ion-background-color, #fff);
+}
+
+// Keep requests parallel, but show only the profile spinner until that first load settles.
+.details-content.pending {
+  display: none;
+}
+
+.attachments ion-segment-button {
+  min-width: 0;
+  --padding-start: 4px;
+  --padding-end: 4px;
+}
+
+.profile .editable {
+  width: fit-content;
+  max-width: 100%;
+  margin-inline: auto;
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) 28px;
+  gap: 4px;
+  align-items: center;
+}
+.profile p.editable:has(.profile-input) {
+  width: 100%;
+}
+.editable::before {
+  content: '';
+}
+.profile-input {
+  width: 100%;
+  min-width: 0;
+  padding: 4px 6px;
+  border: 1px solid var(--ion-color-primary);
+  border-radius: 6px;
+  background: var(--ion-background-color);
+  color: var(--ion-text-color);
+  font: inherit;
+  text-align: inherit;
+  resize: vertical;
+}
+.profile-name .profile-input {
+  position: absolute;
+  inset: 0;
+  height: 100%;
+  padding-block: 0;
+}
+textarea.profile-input {
+  font-size: var(--app-font-body);
+  line-height: var(--app-line-body);
+}
+.field-edit {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  background: transparent;
+  color: var(--ion-color-primary);
+  font-size: 18px;
+}
+.field-edit :is(ion-icon, ion-spinner) {
+  width: 18px;
+  height: 18px;
+}
+
+ion-content[hidden] {
+  display: none;
+}
+
+.quick-actions ion-button.destructive {
+  --background: rgba(var(--ion-color-danger-rgb), 0.1);
+  --background-activated: rgba(var(--ion-color-danger-rgb), 0.18);
+  --background-focused: rgba(var(--ion-color-danger-rgb), 0.14);
+  --background-hover: rgba(var(--ion-color-danger-rgb), 0.14);
+  --color: var(--ion-color-danger);
+}
+.quick-actions ion-button.destructive:hover span {
+  color: var(--ion-color-danger-shade);
+}

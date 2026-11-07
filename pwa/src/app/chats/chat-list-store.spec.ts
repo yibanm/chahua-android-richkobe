@@ -1,0 +1,2299 @@
+import { signal, type WritableSignal } from '@angular/core';
+import { TestBed } from '@angular/core/testing';
+import { Subject } from 'rxjs';
+import { vi } from 'vitest';
+import {
+  GroupKind,
+  MembershipMessageVisibility,
+  MessageType,
+  SystemMessageKind,
+  NotificationType,
+  ServerWsMessageType,
+  type MessageResponse,
+  type ServerWsMessage,
+} from '../../generated/models';
+import { Connection } from '../api/connection';
+import { RpcErrorCode } from '../api/rpc-error';
+import { RpcTestPeer, provideRpcTesting } from '../api/rpc-testing';
+import { decodeId, encodeId } from '../api/snowflake-id';
+import { mockRealtime, testChat, testMessage, testUser, wireChat, wireMessage } from '../api/testing';
+import { ChatListError, ChatListStore, type ChatQuery } from './chat-list-store';
+import { ChatStore } from './chat-store';
+import { SessionStore } from '../session/session-store';
+
+describe('ChatListStore', () => {
+  let data: ChatListStore;
+  let query: ChatQuery;
+  let releaseQuery: () => void;
+  let messages: Connection;
+  let peer: RpcTestPeer;
+  let incoming: Subject<MessageResponse>;
+  let events: Subject<ServerWsMessage>;
+  let resync: Subject<void>;
+  let connected: WritableSignal<boolean>;
+
+  beforeEach(() => {
+    incoming = new Subject<MessageResponse>();
+    events = new Subject<ServerWsMessage>();
+    resync = new Subject<void>();
+    connected = signal(true);
+    TestBed.configureTestingModule({
+      providers: [
+        provideRpcTesting(),
+        {
+          provide: Connection,
+          useValue: mockRealtime({ messages$: incoming, resync$: resync, events$: events, connected }),
+        },
+      ],
+    });
+    peer = TestBed.inject(RpcTestPeer);
+    peer.authenticate();
+    data = TestBed.inject(ChatListStore);
+    query = data.chats(false);
+    releaseQuery = query.activate();
+    messages = TestBed.inject(Connection);
+    TestBed.tick();
+  });
+
+  afterEach(() => {
+    try {
+      peer.verify();
+    } finally {
+      vi.useRealTimers();
+      TestBed.resetTestingModule();
+    }
+  });
+
+  function expectChats(params: Record<string, unknown> = { limit: 50 }) {
+    return peer.expect('chats.list', params);
+  }
+
+  function expectThreads(params: Record<string, unknown>) {
+    return peer.expect('threads.list', params);
+  }
+
+  function expectUnread(chatId: string) {
+    return peer.expect('chats.getUnreadCount', { chatId });
+  }
+
+  function expectReceipt(chatId: string, threadId?: string) {
+    return peer.expect('chats.getReadReceipt', { chatId, ...(threadId ? { threadId } : {}) });
+  }
+
+  function expectMarkRead(chatId: string, messageId: string) {
+    return peer.expect('chats.markAsRead', { chatId, messageId });
+  }
+
+  function expectMarkUnread(chatId: string) {
+    return peer.expect('chats.markAsUnread', { chatId });
+  }
+
+  function expectArchive(chatId: string) {
+    return peer.expect('chats.archive', { chatId });
+  }
+
+  function expectUnarchive(chatId: string) {
+    return peer.expect('chats.unarchive', { chatId });
+  }
+
+  function expectNotificationSetting(chatId: string, mode: string) {
+    return peer.expect('groups.updateNotificationSetting', { chatId, mode });
+  }
+
+  function selectQuery(archived: boolean) {
+    releaseQuery();
+    query = data.chats(archived);
+    releaseQuery = query.activate();
+  }
+
+  async function flushReads() {
+    if (vi.isFakeTimers()) await vi.advanceTimersByTimeAsync(100);
+    else await new Promise((resolve) => setTimeout(resolve, 110));
+  }
+
+  async function settle() {
+    for (let step = 0; step < 12; step++) await Promise.resolve();
+    TestBed.tick();
+  }
+
+  function reconnect() {
+    connected.set(false);
+    TestBed.tick();
+    connected.set(true);
+    TestBed.tick();
+  }
+
+  it.each([true, false])(
+    'keeps the restricted preview and ordering after reconnect even if the follow-up refresh fails (visible: %s)',
+    async (hasVisibleMessage) => {
+      TestBed.inject(SessionStore).user.set(testUser);
+      const visible = { ...wireMessage, id: '90', createdAt: '2026-10-25T10:00:00Z' };
+      const membership = {
+        ...wireMessage,
+        id: '100',
+        messageType: MessageType.system,
+        systemKind: SystemMessageKind.member_joined,
+        createdAt: '2026-10-25T11:00:00Z',
+      };
+      const other = {
+        ...wireChat,
+        id: '9007199254740994',
+        lastMessage: { ...wireMessage, createdAt: '2026-10-25T09:00:00Z' },
+        lastMessageAt: '2026-10-25T09:00:00Z',
+      };
+      const expectedIds = hasVisibleMessage ? [wireChat.id, other.id] : [other.id, wireChat.id];
+      expectChats().flush(
+        structuredClone({
+          chatSettings: { showMembershipMessages: true },
+          chats: [{ ...wireChat, lastMessage: membership, lastMessageAt: membership.createdAt }, other],
+        }),
+      );
+      await settle();
+      reconnect();
+      const restricted = {
+        ...wireChat,
+        membershipMessagePolicy: { visibility: MembershipMessageVisibility.admins, canView: false },
+        lastMessage: hasVisibleMessage ? visible : null,
+        lastMessageAt: hasVisibleMessage ? visible.createdAt : null,
+      };
+      expectChats().flush({
+        chatSettings: { showMembershipMessages: true },
+        chats: hasVisibleMessage ? [restricted, other] : [other, restricted],
+      });
+      await settle();
+      const assertPreview = () => {
+        const chat = query.items().find((chat) => chat.id === testChat.id)!;
+        expect(chat.lastMessage?.id).toBe(hasVisibleMessage ? encodeId('90') : undefined);
+        if (hasVisibleMessage) expect(chat.lastMessageAt).toBe(visible.createdAt);
+        else expect(chat.lastMessageAt == null).toBe(true);
+        expect(query.items().map((chat) => decodeId(chat.id))).toEqual(expectedIds);
+      };
+      const followup = expectChats();
+      followup.error(RpcErrorCode.Unavailable, 'Unavailable');
+      assertPreview();
+      await settle();
+      assertPreview();
+    },
+  );
+
+  it.each(
+    [true, false].flatMap((show) =>
+      Object.values(MembershipMessageVisibility).flatMap((visibility) =>
+        [SystemMessageKind.member_added, SystemMessageKind.member_joined].map((kind) => ({ show, kind, visibility })),
+      ),
+    ),
+  )(
+    'discovers the current user joining a group ($kind, preference: $show, policy: $visibility)',
+    async ({ show, kind, visibility }) => {
+      const session = TestBed.inject(SessionStore);
+      session.user.set(testUser);
+      const current = { ...wireChat, lastMessage: wireMessage, lastMessageAt: wireMessage.createdAt };
+      expectChats().flush(
+        structuredClone({
+          chatSettings: { showMembershipMessages: true },
+          chats: [current],
+          nextCursor: wireChat.id,
+        }),
+      );
+      await settle();
+      if (!show) {
+        session.acceptChatSettings({ showMembershipMessages: false }, testUser.uid);
+        await settle();
+        expectChats().flush(
+          structuredClone({
+            chatSettings: { showMembershipMessages: false },
+            chats: [current],
+            nextCursor: wireChat.id,
+          }),
+        );
+        await settle();
+      }
+      const boundary = query.loadedThrough();
+      const chatId = '9007199254740994';
+      const announcement = {
+        ...testMessage,
+        chatId: encodeId(chatId),
+        createdAt: '2026-10-25T10:00:00Z',
+        messageType: MessageType.system,
+        systemKind: kind,
+        sender: { ...testMessage.sender, uid: kind === SystemMessageKind.member_joined ? testUser.uid : 2 },
+        systemLinks: kind === SystemMessageKind.member_added ? { uid: testUser.uid } : undefined,
+      };
+      const canView = visibility === MembershipMessageVisibility.members;
+      const visible = show && canView;
+      // Restricted groups do not deliver a system announcement to the new member.
+      if (canView) incoming.next(announcement);
+      await settle();
+      peer.expectNone('chats.list');
+      events.next({ type: ServerWsMessageType.chatMembershipChanged, payload: { chatId: encodeId(chatId) } });
+      await settle();
+      expectChats({ limit: 1, chatId: chatId, archived: false }).flush({
+        chatSettings: { showMembershipMessages: show },
+        chats: [
+          {
+            ...wireChat,
+            id: chatId,
+            membershipMessagePolicy: { visibility, canView },
+            lastMessage: visible ? { ...announcement, id: wireMessage.id, chatId } : null,
+            lastMessageAt: visible ? announcement.createdAt : null,
+          },
+        ],
+      });
+      await settle();
+      // A late copy of the announcement must not fetch the same row again.
+      if (canView) incoming.next(announcement);
+      await settle();
+      expect(query.items().map((chat) => decodeId(chat.id))).toEqual(
+        visible ? [chatId, wireChat.id] : [wireChat.id, chatId],
+      );
+      if (!visible) expect(query.items()[1].lastMessage).toBeNull();
+      expect(query.hasMore()).toBe(true);
+      expect(query.loadedThrough()).toBe(boundary);
+      peer.expectNone('chats.list');
+    },
+  );
+
+  it.each(['inactive', 'background', 'loading'])(
+    'defers a membership event without an announcement until the list is ready (%s)',
+    async (state) => {
+      const session = TestBed.inject(SessionStore);
+      const initial = expectChats();
+      session.user.set({ ...testUser, showMembershipMessages: false });
+      await settle();
+      initial.flush({ chatSettings: { showMembershipMessages: true }, chats: [wireChat] });
+      await settle();
+      expect(query.items()).toEqual([]);
+      const head = expectChats();
+      if (state !== 'loading') {
+        head.flush({ chatSettings: { showMembershipMessages: false }, chats: [] });
+        await settle();
+      }
+      const hidden = vi.spyOn(document, 'hidden', 'get').mockReturnValue(state === 'background');
+      if (state === 'inactive') releaseQuery();
+      events.next({
+        type: ServerWsMessageType.chatMembershipChanged,
+        payload: { chatId: testChat.id },
+      });
+      await settle();
+      peer.expectNone('chats.list');
+      if (state === 'inactive') releaseQuery = query.activate();
+      if (state === 'background') {
+        hidden.mockReturnValue(false);
+        document.dispatchEvent(new Event('visibilitychange'));
+      }
+      if (state === 'loading') head.flush({ chatSettings: { showMembershipMessages: false }, chats: [] });
+      await settle();
+      expectChats({ limit: 1, chatId: wireChat.id, archived: false }).flush({
+        chatSettings: { showMembershipMessages: false },
+        chats: [{ ...wireChat }],
+      });
+      await settle();
+      expect(query.items().map((chat) => chat.id)).toEqual([testChat.id]);
+      hidden.mockRestore();
+    },
+  );
+
+  it('does not discover groups for hidden membership events affecting other users', async () => {
+    const initial = expectChats();
+    TestBed.inject(SessionStore).user.set({ ...testUser, showMembershipMessages: false });
+    await settle();
+    initial.flush({ chatSettings: { showMembershipMessages: true }, chats: [wireChat] });
+    await settle();
+    expect(query.items()).toEqual([]);
+    expectChats().flush({ chatSettings: { showMembershipMessages: false }, chats: [] });
+    await settle();
+    for (const kind of [
+      SystemMessageKind.member_added,
+      SystemMessageKind.member_joined,
+      SystemMessageKind.member_left,
+      SystemMessageKind.member_removed,
+    ]) {
+      incoming.next({
+        ...testMessage,
+        messageType: MessageType.system,
+        systemKind: kind,
+        sender: { ...testMessage.sender, uid: 2 },
+        systemLinks: { uid: 3 },
+      });
+    }
+    await settle();
+    expect(query.items()).toEqual([]);
+    peer.expectNone('chats.list');
+  });
+
+  it('restarts from the head when another device changes settings during pagination', async () => {
+    const session = TestBed.inject(SessionStore);
+    session.user.set(testUser);
+    expectChats().flush({
+      chatSettings: { showMembershipMessages: true },
+      chats: [{ ...wireChat }],
+      nextCursor: wireChat.id,
+    });
+    await settle();
+    const previous = query.items();
+    const loading = query.loadMore();
+    expectChats({ limit: 50, after: wireChat.id }).flush({
+      chatSettings: { showMembershipMessages: false },
+      chats: [{ ...wireChat, name: 'must not merge' }],
+    });
+    await loading;
+    await settle();
+    expect(session.user()?.showMembershipMessages).toBe(false);
+    expect(query.items()).toEqual(previous);
+    expectChats().error(RpcErrorCode.Unavailable, 'Unavailable');
+    await settle();
+    expect(query.items()).toEqual(previous);
+    expect(query.hasMore()).toBe(false);
+    const retrying = query.retry();
+    expectChats().flush({
+      chatSettings: { showMembershipMessages: false },
+      chats: [{ ...wireChat, name: 'fresh' }],
+    });
+    await retrying;
+    expect(query.items()[0].name).toBe('fresh');
+  });
+
+  it('refreshes the loaded depth atomically on filter changes and ignores hidden activity for ordering', async () => {
+    const session = TestBed.inject(SessionStore);
+    session.user.set(testUser);
+    const bId = '9007199254740994';
+    const aVisible = { ...wireMessage, createdAt: '2026-10-24T10:00:00Z' };
+    const aHidden = {
+      ...wireMessage,
+      id: '9007199254741100',
+      createdAt: '2026-10-24T12:00:00Z',
+      messageType: MessageType.system,
+      systemKind: SystemMessageKind.member_joined,
+    };
+    const a = { ...wireChat, lastMessage: aHidden, lastMessageAt: aHidden.createdAt };
+    const b = {
+      ...wireChat,
+      id: bId,
+      lastMessage: { ...wireMessage, chatId: bId, createdAt: '2026-10-24T11:00:00Z' },
+      lastMessageAt: '2026-10-24T11:00:00Z',
+    };
+    expectChats().flush({ chatSettings: { showMembershipMessages: true }, chats: [a, b] });
+    await settle();
+    const previous = query.items();
+    session.user.set({ ...testUser, showMembershipMessages: false });
+    await settle();
+    expectChats().flush({ chatSettings: { showMembershipMessages: false }, chats: [b], nextCursor: bId });
+    await settle();
+    expect(query.items()).toEqual(previous);
+    expect(query.loading()).toBe(true);
+    expectChats({ limit: 50, after: bId }).flush({
+      chatSettings: { showMembershipMessages: false },
+      chats: [{ ...a, lastMessage: aVisible, lastMessageAt: aVisible.createdAt }],
+    });
+    await settle();
+    expect(query.items().map((chat) => decodeId(chat.id))).toEqual([bId, wireChat.id]);
+    expect(query.items()[1].lastMessageAt).toBe(aVisible.createdAt);
+    incoming.next({
+      ...testMessage,
+      id: encodeId('9007199254741200'),
+      createdAt: '2026-10-24T13:00:00Z',
+      messageType: MessageType.system,
+      systemKind: SystemMessageKind.member_left,
+    });
+    await flushReads();
+    expectUnread(wireChat.id).flush({ unreadCount: 3 });
+    await settle();
+    expect(query.items().map((chat) => decodeId(chat.id))).toEqual([bId, wireChat.id]);
+    expect(query.items()[1].lastMessageAt).toBe(aVisible.createdAt);
+    peer.expectNone('chats.list');
+    // Re-enabling then switching back cancels the old-policy request without clearing the list.
+    session.user.set(testUser);
+    await settle();
+    const obsolete = expectChats();
+    session.user.set({ ...testUser, showMembershipMessages: false });
+    await settle();
+    obsolete.flush({ chatSettings: { showMembershipMessages: true }, chats: [a, b] });
+    await settle();
+    expect(query.items()[1].lastMessageAt).toBe(aVisible.createdAt);
+    expectChats().flush({
+      chatSettings: { showMembershipMessages: false },
+      chats: [b, { ...a, lastMessage: aVisible, lastMessageAt: aVisible.createdAt }],
+    });
+    await settle();
+  });
+
+  it.each([true, false])('recovers unread errors from accepted WS state (RPC fails first: %s)', async (failsFirst) => {
+    TestBed.inject(SessionStore).user.set(testUser);
+    const watch = vi.spyOn(messages, 'watchConversationStates');
+    expectChats().flush(structuredClone({ chatSettings: { showMembershipMessages: true }, chats: [wireChat] }));
+    await settle();
+    incoming.next(testMessage);
+    await flushReads();
+    const unread = expectUnread(wireChat.id);
+    if (failsFirst) {
+      unread.error(RpcErrorCode.Unavailable, 'Unavailable');
+      await settle();
+      expect(query.error()).toBe(ChatListError.Unread);
+    }
+    const payload = {
+      requestId: watch.mock.calls.at(-1)![0],
+      full: true,
+      states: [{ chatId: testChat.id, accessible: true, unreadCount: 1, unreadMentions: 0, unreadReactions: 0 }],
+    };
+    events.next({
+      type: ServerWsMessageType.conversationStates,
+      payload: { ...payload, requestId: payload.requestId - 1 },
+    });
+    await settle();
+    expect(data['chatInfo'].cachedReadState(testChat.id)).toBeUndefined();
+    if (failsFirst) expect(query.error()).toBe(ChatListError.Unread);
+
+    events.next({ type: ServerWsMessageType.conversationStates, payload });
+    await settle();
+    expect(data['chatInfo'].cachedReadState(testChat.id)?.unreadCount).toBe(1);
+    expect(query.error()).toBeUndefined();
+    if (!failsFirst) {
+      unread.error(RpcErrorCode.Unavailable, 'Unavailable');
+      await settle();
+      expect(query.error()).toBeUndefined();
+    }
+    data['chatInfo'].invalidateReads(new Set([testChat.id]));
+    expect(query.error()).toBeUndefined();
+  });
+
+  it('clears only the recovered chat unread error and preserves a failed page', async () => {
+    TestBed.inject(SessionStore).user.set(testUser);
+    const watch = vi.spyOn(messages, 'watchConversationStates');
+    const other = encodeId('123');
+    expectChats().flush(
+      structuredClone({
+        chatSettings: { showMembershipMessages: true },
+        chats: [wireChat, { ...wireChat, id: '123' }],
+        nextCursor: wireChat.id,
+      }),
+    );
+    await settle();
+    incoming.next(testMessage);
+    incoming.next({ ...testMessage, chatId: other });
+    await flushReads();
+    for (const id of [wireChat.id, '123']) expectUnread(id).error(RpcErrorCode.Unavailable, 'Unavailable');
+    await settle();
+    const more = query.loadMore();
+    expectChats({ limit: 50, after: wireChat.id }).error(RpcErrorCode.Unavailable, 'Unavailable');
+    await more;
+    const state = { accessible: true, unreadCount: 0, unreadMentions: 0, unreadReactions: 0 };
+    const requestId = watch.mock.calls.at(-1)![0];
+    events.next({
+      type: ServerWsMessageType.conversationStates,
+      payload: {
+        requestId,
+        full: true,
+        states: [{ ...state, chatId: testChat.id }],
+      },
+    });
+    await settle();
+    expect(query.listError()).toBe(ChatListError.More);
+    expect(query.error()).toBe(ChatListError.More);
+    const retry = query.retry();
+    expectChats({ limit: 50, after: wireChat.id }).flush({ chatSettings: { showMembershipMessages: true }, chats: [] });
+    await retry;
+    expect(query.error()).toBe(ChatListError.Unread);
+    events.next({
+      type: ServerWsMessageType.conversationStates,
+      payload: {
+        requestId,
+        full: false,
+        states: [{ ...state, chatId: other }],
+      },
+    });
+    await settle();
+    expect(query.error()).toBeUndefined();
+  });
+
+  it('retries a failed continuation at its cursor while retaining the loaded window', async () => {
+    expectChats().flush(
+      structuredClone({
+        chatSettings: { showMembershipMessages: true },
+        chats: [wireChat],
+        nextCursor: wireChat.id,
+      }),
+    );
+    await settle();
+    const pending = query.loadMore();
+    expectChats({ limit: 50, after: wireChat.id }).error(RpcErrorCode.Unavailable, 'Unavailable');
+    await pending;
+    expect(query.error()).toBe(ChatListError.More);
+    expect(query.items().map((chat) => chat.id)).toEqual([testChat.id]);
+    const retry = query.retry();
+    expect(query.loadingMore()).toBe(true);
+    expect(query.loading()).toBe(false);
+    expectChats({ limit: 50, after: wireChat.id }).flush(
+      structuredClone({
+        chatSettings: { showMembershipMessages: true },
+        chats: [{ ...wireChat, id: '111' }],
+      }),
+    );
+    await retry;
+    expect(query.items().map((chat) => chat.id)).toEqual([testChat.id, encodeId('111')]);
+    expect(query.error()).toBeUndefined();
+  });
+
+  it.each([
+    { paging: false, unreadFirst: false },
+    { paging: false, unreadFirst: true },
+    { paging: true, unreadFirst: false },
+    { paging: true, unreadFirst: true },
+  ])('keeps list failures recoverable with overlapping unread failures: %j', async ({ paging, unreadFirst }) => {
+    expectChats().flush(
+      structuredClone({
+        chatSettings: { showMembershipMessages: true },
+        chats: [wireChat],
+        nextCursor: wireChat.id,
+      }),
+    );
+    await settle();
+    const pending = paging ? query.loadMore() : query.refresh();
+    incoming.next(testMessage);
+    await flushReads();
+    const listParams = paging ? { limit: 50, after: wireChat.id } : { limit: 50 };
+    const listRequest = expectChats(listParams);
+    const unreadRequest = expectUnread(decodeId(testChat.id));
+    for (const request of unreadFirst ? [unreadRequest, listRequest] : [listRequest, unreadRequest]) {
+      request.error(RpcErrorCode.Unavailable, 'Unavailable');
+      await settle();
+    }
+    await pending;
+    const error = paging ? ChatListError.More : ChatListError.Load;
+    expect(query.listError()).toBe(error);
+    expect(query.error()).toBe(error);
+    expect(query.items()).toHaveLength(1);
+
+    const retry = query.retry();
+    expectChats(listParams).flush(
+      structuredClone({
+        chatSettings: { showMembershipMessages: true },
+        chats: paging ? [] : [wireChat],
+        nextCursor: wireChat.id,
+      }),
+    );
+    await retry;
+    expect(query.listError()).toBeUndefined();
+    expect(query.hasMore()).toBe(true);
+    // A successful page must not clear an unread failure in an unrelated row.
+    expect(query.error()).toBe(paging ? ChatListError.Unread : undefined);
+    incoming.next(testMessage);
+    await flushReads();
+    expectUnread(decodeId(testChat.id)).flush({ unreadCount: 1 });
+    await settle();
+    expect(query.error()).toBeUndefined();
+    const more = query.loadMore();
+    expectChats({ limit: 50, after: wireChat.id }).flush({ chatSettings: { showMembershipMessages: true }, chats: [] });
+    await more;
+    expect(query.hasMore()).toBe(false);
+  });
+
+  it('keeps an unread failure when an older list response cannot refresh that read state', async () => {
+    expectChats().flush(structuredClone({ chatSettings: { showMembershipMessages: true }, chats: [wireChat] }));
+    await settle();
+    query.refresh();
+    incoming.next(testMessage);
+    await flushReads();
+    expectUnread(decodeId(testChat.id)).error(RpcErrorCode.Unavailable, 'Unavailable');
+    await settle();
+    expect(query.error()).toBe(ChatListError.Unread);
+    expectChats().flush(structuredClone({ chatSettings: { showMembershipMessages: true }, chats: [wireChat] }));
+    await settle();
+    expect(data['chatInfo'].cachedReadState(testChat.id)).toBeUndefined();
+    expect(query.listError()).toBeUndefined();
+    expect(query.error()).toBe(ChatListError.Unread);
+    query.refresh();
+    expectChats().flush(structuredClone({ chatSettings: { showMembershipMessages: true }, chats: [wireChat] }));
+    await settle();
+    expect(query.error()).toBeUndefined();
+  });
+
+  it('refreshes a loaded DM preview receipt when the peer reads', async () => {
+    TestBed.inject(SessionStore).user.set(testUser);
+    expectChats().flush(
+      structuredClone({
+        chatSettings: { showMembershipMessages: true },
+        chats: [{ ...wireChat, kind: GroupKind.dm, lastMessage: wireMessage }],
+      }),
+    );
+    await settle();
+    events.next({
+      type: ServerWsMessageType.readReceiptChanged,
+      payload: { chatId: testChat.id, readerUid: 2 },
+    });
+    await settle();
+    expectReceipt(wireChat.id).flush({ lastReadMessageId: wireMessage.id });
+    await settle();
+    expect(TestBed.inject(ChatStore).chat(testChat.id).peerLastReadMessageId).toBe(testMessage.id);
+  });
+
+  it('handles a chat-wide privacy event when only its thread row is loaded', async () => {
+    TestBed.inject(SessionStore).user.set(testUser);
+    expectChats().flush({ chatSettings: { showMembershipMessages: true }, chats: [] });
+    const release = data.threads(false).activate();
+    const rootId = '9007199254741999';
+    await settle();
+    expectThreads({ limit: 20, archived: false }).flush({
+      threads: [
+        {
+          chatId: wireChat.id,
+          chatKind: GroupKind.dm,
+          chatName: 'DM',
+          threadRootMessage: { ...wireMessage, id: rootId, mentions: [] },
+          replyCount: 1,
+          lastReplyAt: wireMessage.createdAt,
+          subscribedAt: wireMessage.createdAt,
+          archived: false,
+          unreadCount: 0,
+          peerLastReadMessageId: wireMessage.id,
+        },
+      ],
+    });
+    await settle();
+    expect(data.threads(false).items()[0].peerLastReadMessageId).toBe(testMessage.id);
+    events.next({
+      type: ServerWsMessageType.readReceiptChanged,
+      payload: { chatId: testChat.id, privacyChanged: true },
+    });
+    expect(data.threads(false).items()[0].peerLastReadMessageId).toBeUndefined();
+    expectReceipt(wireChat.id, rootId).flush({ lastReadMessageId: null });
+    await settle();
+    expect(data.threads(false).items()[0].peerLastReadMessageId).toBeNull();
+    release();
+  });
+
+  it('derives tab badges from unmuted conversation counts and mentions', async () => {
+    TestBed.inject(SessionStore).user.set(testUser);
+    expectChats().flush(structuredClone({ chatSettings: { showMembershipMessages: true }, chats: [] }));
+    await settle();
+    const watch = vi.fn();
+    (TestBed.inject(Connection) as unknown as { watchConversationUnread: typeof watch }).watchConversationUnread =
+      watch;
+    const release = data.viewUnread.activate();
+    TestBed.tick();
+    const summary = (key: string, count: number, attention: number) => ({
+      key,
+      unreadMessageCount: 10,
+      unreadUnmutedMessageCount: 5,
+      unreadConversationCount: 6,
+      unreadUnmutedConversationCount: count,
+      unreadAttentionCount: 2,
+      unreadUnmutedAttentionCount: attention,
+    });
+    events.next({
+      type: ServerWsMessageType.conversationUnread,
+      payload: {
+        full: true,
+        requestId: watch.mock.calls.at(-1)![0],
+        summaries: [
+          summary('messages', 3, 0),
+          summary('groups', 0, 1),
+          summary('friends', 2, 0),
+          summary('threads', 1, 0),
+        ],
+        appBadgeCount: 7,
+      },
+    });
+    await settle();
+    expect(data.tabBadges(false)).toEqual({
+      messages: { count: 3, mention: false },
+      groups: { count: 0, mention: true },
+      friends: { count: 2, mention: false },
+      threads: { count: 1, mention: false },
+    });
+    expect(data.tabBadges(true).messages).toEqual({ count: 0, mention: false });
+    release();
+  });
+  it('coalesces message and mention notifications and ignores unrelated known edits', async () => {
+    TestBed.inject(SessionStore).user.set(testUser);
+    TestBed.tick();
+    expectChats().flush(structuredClone({ chatSettings: { showMembershipMessages: true }, chats: [wireChat] }));
+    await settle();
+    (await peer.expectAsync('chats.list', { limit: 50 })).flush(
+      structuredClone({ chatSettings: { showMembershipMessages: true }, chats: [wireChat] }),
+    );
+    await settle();
+    incoming.next({ ...testMessage, sender: { ...testMessage.sender, uid: 2 }, mentions: [{ uid: 1, gender: 0 }] });
+    events.next({
+      type: ServerWsMessageType.notification,
+      payload: {
+        chatId: testChat.id,
+        messageId: testMessage.id,
+        actorUid: 2,
+        notificationType: NotificationType.mention,
+      },
+    });
+    await flushReads();
+    expectUnread(decodeId(testChat.id)).flush({ unreadCount: 3, unreadMentions: 1 });
+    await settle();
+    events.next({
+      type: ServerWsMessageType.messageUpdated,
+      payload: {
+        ...testMessage,
+        message: 'edited text only',
+        mentions: [{ uid: 1, gender: 0 }],
+      },
+    });
+    await flushReads();
+    peer.expectNone('chats.getUnreadCount');
+    expect(query.items()[0].unreadMentions).toBe(1);
+  });
+
+  it('defers notifications while the document is hidden even if the list remains active', async () => {
+    expectChats().flush(structuredClone({ chatSettings: { showMembershipMessages: true }, chats: [wireChat] }));
+    await settle();
+    const hidden = vi.spyOn(document, 'hidden', 'get').mockReturnValue(true);
+    events.next({
+      type: ServerWsMessageType.notification,
+      payload: {
+        chatId: testChat.id,
+        messageId: testMessage.id,
+        actorUid: 2,
+        notificationType: NotificationType.mention,
+      },
+    });
+    await flushReads();
+    peer.expectNone('chats.getUnreadCount');
+    hidden.mockReturnValue(false);
+    document.dispatchEvent(new Event('visibilitychange'));
+    await flushReads();
+    expectUnread(decodeId(testChat.id)).flush({ unreadCount: 3, unreadMentions: 1 });
+    await settle();
+    expect(query.items()[0].unreadMentions).toBe(1);
+  });
+
+  it('ignores constructed DM mentions but still updates ordinary message unread counts', async () => {
+    expectChats().flush(
+      structuredClone({
+        chatSettings: { showMembershipMessages: true },
+        chats: [{ ...wireChat, kind: GroupKind.dm }],
+      }),
+    );
+    await settle();
+    events.next({
+      type: ServerWsMessageType.notification,
+      payload: {
+        chatId: testChat.id,
+        messageId: testMessage.id,
+        actorUid: 2,
+        notificationType: NotificationType.mention,
+      },
+    });
+    await flushReads();
+    peer.expectNone('chats.getUnreadCount');
+    incoming.next({ ...testMessage, sender: { ...testMessage.sender, uid: 2 } });
+    await flushReads();
+    expectUnread(decodeId(testChat.id)).flush({ unreadCount: 3, unreadMentions: 0 });
+    await settle();
+    expect(query.items()[0].unreadCount).toBe(3);
+  });
+
+  it('refreshes the chat reaction count on a directed reaction notification', async () => {
+    expectChats().flush(structuredClone({ chatSettings: { showMembershipMessages: true }, chats: [wireChat] }));
+    await settle();
+
+    events.next({
+      type: ServerWsMessageType.notification,
+      payload: {
+        notificationType: NotificationType.reaction,
+        chatId: testChat.id,
+        messageId: testMessage.id,
+        threadRootId: undefined,
+        actorUid: 2,
+      },
+    });
+    await settle();
+
+    await flushReads();
+    expectUnread(decodeId(testChat.id)).flush(
+      structuredClone({ lastReadMessageId: wireMessage.id, unreadCount: 0, unreadReactions: 1 }),
+    );
+    await settle();
+    TestBed.tick();
+    expect(query.items()[0].unreadReactions).toBe(1);
+  });
+
+  it('refreshes the chat mention count on a directed mention notification', async () => {
+    expectChats().flush(structuredClone({ chatSettings: { showMembershipMessages: true }, chats: [wireChat] }));
+    await settle();
+
+    events.next({
+      type: ServerWsMessageType.notification,
+      payload: {
+        notificationType: NotificationType.mention,
+        chatId: testChat.id,
+        messageId: testMessage.id,
+        threadRootId: undefined,
+        actorUid: 2,
+      },
+    });
+    await settle();
+
+    await flushReads();
+    expectUnread(decodeId(testChat.id)).flush(
+      structuredClone({ lastReadMessageId: wireMessage.id, unreadCount: 0, unreadMentions: 1 }),
+    );
+    await settle();
+    TestBed.tick();
+    expect(query.items()[0].unreadMentions).toBe(1);
+  });
+
+  it('clears the last reaction badge after its removal broadcast', async () => {
+    expectChats().flush(
+      structuredClone({
+        chatSettings: { showMembershipMessages: true },
+        chats: [{ ...wireChat, unreadReactions: 1 }],
+      }),
+    );
+    await settle();
+    events.next({
+      type: ServerWsMessageType.notification,
+      payload: {
+        notificationType: NotificationType.reaction,
+        chatId: testChat.id,
+        messageId: testMessage.id,
+        threadRootId: undefined,
+        actorUid: 2,
+      },
+    });
+    await flushReads();
+    expectUnread(decodeId(testChat.id)).flush({ unreadCount: 0, unreadReactions: 0 });
+    await settle();
+    expect(query.items()[0].unreadReactions).toBe(0);
+  });
+
+  it('clears a row mention badge without fetching a global summary when an edit removes it', async () => {
+    expectChats().flush(
+      structuredClone({
+        chatSettings: { showMembershipMessages: true },
+        chats: [{ ...wireChat, unreadMentions: 1 }],
+      }),
+    );
+    await settle();
+    await settle();
+    messages.acceptChange({
+      type: ServerWsMessageType.messageUpdated,
+      payload: { ...testMessage, message: 'edited', mentions: [] },
+    });
+    await flushReads();
+    expectUnread(decodeId(testChat.id)).flush({ unreadCount: 1, unreadMentions: 0 });
+    await settle();
+    await settle();
+    expect(query.items()[0].unreadMentions).toBe(0);
+    peer.expectNone('chats.getTotalUnreadCount');
+  });
+
+  it('loads archives separately and excludes topic messages from main chat previews', async () => {
+    expectChats().flush(structuredClone({ chatSettings: { showMembershipMessages: true }, chats: [wireChat] }));
+    await settle();
+    TestBed.tick();
+    incoming.next({ ...testMessage, replyRootId: encodeId('100') });
+    peer.expectNone('chats.getUnreadCount');
+    expect(query.items()[0].lastMessage).toBeUndefined();
+    selectQuery(true);
+    TestBed.tick();
+    expectChats({ limit: 50, archived: true }).flush(
+      structuredClone({
+        chatSettings: { showMembershipMessages: true },
+        chats: [{ ...wireChat, archived: true }],
+      }),
+    );
+    await settle();
+    TestBed.tick();
+    expect(query.items()[0].archived).toBe(true);
+    const restoring = data['chatInfo'].setArchived(testChat.id, false);
+    const action = expectUnarchive(decodeId(testChat.id));
+    action.flush(null);
+    await restoring;
+    TestBed.tick();
+    peer.expectNone('chats.list');
+    await settle();
+    TestBed.tick();
+    expect(query.items()).toEqual([]);
+  });
+
+  it('reconciles archive changes missed while disconnected without retaining an old local override', async () => {
+    expectChats().flush(structuredClone({ chatSettings: { showMembershipMessages: true }, chats: [wireChat] }));
+    await settle();
+    TestBed.tick();
+    const archiving = data['chatInfo'].setArchived(testChat.id, true);
+    expectArchive(decodeId(testChat.id)).flush(null);
+    await archiving;
+    TestBed.tick();
+    peer.expectNone('chats.list');
+    await settle();
+    TestBed.tick();
+    reconnect();
+    expectChats().flush(structuredClone({ chatSettings: { showMembershipMessages: true }, chats: [wireChat] }));
+    await settle();
+    TestBed.tick();
+    expect(query.items()).toEqual([testChat]);
+    reconnect();
+    expectChats().flush({ chatSettings: { showMembershipMessages: true }, chats: [] });
+    await settle();
+    TestBed.tick();
+    expect(query.items()).toEqual([]);
+  });
+
+  it('loads response models, filters them, and follows the conversation cursor', async () => {
+    expectChats().flush(
+      structuredClone({
+        chatSettings: { showMembershipMessages: true },
+        chats: [wireChat],
+        nextCursor: '9007199254740993',
+      }),
+    );
+    await settle();
+    TestBed.tick();
+    expect(query.items()).toEqual([testChat]);
+    const loading = query.loadMore();
+    const dm = { ...testChat, id: encodeId('9007199254740995'), kind: GroupKind.dm };
+    expectChats({ limit: 50, after: '9007199254740993' }).flush({
+      chatSettings: { showMembershipMessages: true },
+      chats: [{ ...dm, id: decodeId(dm.id) }],
+      nextCursor: null,
+    });
+    await loading;
+    expect(query.items()).toEqual([testChat, dm]);
+    expect(query.hasMore()).toBe(false);
+    const info = TestBed.inject(ChatStore);
+    expect(info.get(dm.id)?.kind).toBe(GroupKind.dm);
+    selectQuery(true);
+    TestBed.tick();
+    expectChats({ limit: 50, archived: true }).flush({ chatSettings: { showMembershipMessages: true }, chats: [] });
+    await settle();
+    expect(query.items()).toEqual([]);
+    expect(info.get(testChat.id)?.name).toBe(testChat.name);
+    expect(info.get(dm.id)?.kind).toBe(GroupKind.dm);
+  });
+
+  it('ignores an old pagination response after the list has refreshed', async () => {
+    expectChats().flush(
+      structuredClone({
+        chatSettings: { showMembershipMessages: true },
+        chats: [wireChat],
+        nextCursor: '9007199254740993',
+      }),
+    );
+    await settle();
+    TestBed.tick();
+    const loading = query.loadMore();
+    const oldPage = expectChats({ limit: 50, after: '9007199254740993' });
+    data.refreshChats();
+    TestBed.tick();
+    expectChats().flush({ chatSettings: { showMembershipMessages: true }, chats: [], nextCursor: null });
+    await settle();
+    TestBed.tick();
+    oldPage.flush({ chatSettings: { showMembershipMessages: true }, chats: [wireChat], nextCursor: null });
+    await loading;
+    expect(query.items()).toEqual([]);
+  });
+  it('applies the first refresh page before reading the rest of the loaded depth', async () => {
+    const many = Array.from({ length: 60 }, (_, index) => ({
+      ...wireChat,
+      id: String(9007199254000000 + index),
+      lastMessageAt: new Date(Date.UTC(2026, 0, 1, 0, 59 - index)).toISOString(),
+    }));
+    expectChats().flush(structuredClone({ chatSettings: { showMembershipMessages: true }, chats: many }));
+    await settle();
+    expect(query.items()).toHaveLength(60);
+    query.refresh();
+    expectChats().flush(
+      structuredClone({
+        chatSettings: { showMembershipMessages: true },
+        chats: [{ ...many[0], lastMessage: structuredClone(wireMessage) }, ...structuredClone(many.slice(1, 50))],
+        nextCursor: '9007199254740993',
+      }),
+    );
+    await settle();
+    expect(query.items()[0].lastMessage?.id).toBe(testMessage.id);
+    expect(query.loading()).toBe(true);
+    expectChats({ limit: 50, after: '9007199254740993' }).flush(
+      structuredClone({ chatSettings: { showMembershipMessages: true }, chats: many.slice(50) }),
+    );
+    await settle();
+    expect(query.loading()).toBe(false);
+    expect(query.items()).toHaveLength(60);
+  });
+
+  it('updates the preview once and uses the authoritative live unread count without losing pagination', async () => {
+    expectChats().flush(
+      structuredClone({
+        chatSettings: { showMembershipMessages: true },
+        chats: [wireChat],
+        nextCursor: '9007199254740993',
+      }),
+    );
+    await settle();
+    TestBed.tick();
+    const loading = query.loadMore();
+    incoming.next(testMessage);
+    incoming.next(testMessage);
+    await flushReads();
+    expectUnread(decodeId(testChat.id)).flush({ unreadCount: 7 });
+    expectChats({ limit: 50, after: '9007199254740993' }).flush(
+      structuredClone({
+        chatSettings: { showMembershipMessages: true },
+        chats: [{ ...wireChat, id: '9007199254740995' }],
+        nextCursor: null,
+      }),
+    );
+    await loading;
+    expect(query.items()).toHaveLength(2);
+    expect(query.items()[0].lastMessage?.id).toBe(testMessage.id);
+    expect(query.items()[0].unreadCount).toBe(7);
+  });
+
+  it('keeps an edit visible over a list response that started before the change', async () => {
+    expectChats().flush(
+      structuredClone({
+        chatSettings: { showMembershipMessages: true },
+        chats: [{ ...wireChat, lastMessage: wireMessage }],
+      }),
+    );
+    await settle();
+    query.refresh();
+    const stale = expectChats();
+    stale.flush(
+      structuredClone({
+        chatSettings: { showMembershipMessages: true },
+        chats: [{ ...wireChat, lastMessage: wireMessage }],
+      }),
+    );
+    const edited = { ...testMessage, message: '修改后的消息', isEdited: true };
+    messages.acceptChange({ type: ServerWsMessageType.messageUpdated, payload: edited });
+    expect(query.items()[0].lastMessage?.message).toBe(edited.message);
+    await settle();
+    expect(query.items()[0].lastMessage?.message).toBe(edited.message);
+    peer.expectNone('chats.list');
+    query.refresh();
+    expectChats().flush(
+      structuredClone({
+        chatSettings: { showMembershipMessages: true },
+        chats: [{ ...wireChat, lastMessage: { ...wireMessage, message: edited.message } }],
+      }),
+    );
+    await settle();
+    expect(query.items()[0].lastMessage?.message).toBe(edited.message);
+  });
+
+  it('withdraws a live preview immediately and retires it after the authoritative tombstone arrives', async () => {
+    expectChats().flush(structuredClone({ chatSettings: { showMembershipMessages: true }, chats: [wireChat] }));
+    await settle();
+    incoming.next(testMessage);
+    await flushReads();
+    expectUnread(decodeId(testChat.id)).flush({ unreadCount: 7 });
+    await settle();
+    query.refresh();
+    const stale = expectChats();
+    const deleted = { ...testMessage, message: undefined, isDeleted: true, attachments: [], mentions: [] };
+    messages.acceptChange({ type: ServerWsMessageType.messageDeleted, payload: deleted });
+    expect(query.items()[0].lastMessage).toMatchObject({ id: testMessage.id, isDeleted: true });
+    expect(query.items()[0].unreadCount).toBe(7);
+    await settle();
+    stale.flush(structuredClone({ chatSettings: { showMembershipMessages: true }, chats: [wireChat] }));
+    await settle();
+    expectChats({ limit: 1, chatId: wireChat.id, archived: false }).flush(
+      structuredClone({
+        chatSettings: { showMembershipMessages: true },
+        chats: [{ ...wireChat, lastMessage: { ...wireMessage, isDeleted: true, message: null }, unreadCount: 3 }],
+      }),
+    );
+    await settle();
+    expect(query.items()[0]).toMatchObject({ lastMessage: { isDeleted: true }, unreadCount: 3 });
+    incoming.next(testMessage);
+    expect(query.items()[0].lastMessage?.isDeleted).toBe(true);
+    await flushReads();
+    peer.expectNone('chats.getUnreadCount');
+    await settle();
+  });
+
+  it('waits for bulk reconciliation and refreshes one row without reloading its loaded pages', async () => {
+    expectChats().flush(
+      structuredClone({
+        chatSettings: { showMembershipMessages: true },
+        chats: [wireChat],
+        nextCursor: wireChat.id,
+      }),
+    );
+    await settle();
+    const more = query.loadMore();
+    const older = { ...wireChat, id: '9007199254740995' };
+    expectChats({ limit: 50, after: wireChat.id }).flush(
+      structuredClone({
+        chatSettings: { showMembershipMessages: true },
+        chats: [older],
+        nextCursor: older.id,
+      }),
+    );
+    await more;
+    messages.acceptChange({
+      type: ServerWsMessageType.messagesBulkDeleted,
+      payload: { chatId: testChat.id, messageIds: [testMessage.id], complete: false },
+    });
+    await settle();
+    peer.expectNone('chats.list');
+    messages.acceptChange({
+      type: ServerWsMessageType.messagesBulkDeleted,
+      payload: { chatId: testChat.id, messageIds: [], complete: true, threadRootIds: [] },
+    });
+    await settle();
+    expectChats({ limit: 1, chatId: wireChat.id, archived: false }).flush(
+      structuredClone({
+        chatSettings: { showMembershipMessages: true },
+        chats: [{ ...wireChat, unreadCount: 0 }],
+      }),
+    );
+    await settle();
+    expect(query.items()).toHaveLength(2);
+    const next = query.loadMore();
+    expectChats({ limit: 50, after: older.id }).flush({ chatSettings: { showMembershipMessages: true }, chats: [] });
+    await next;
+  });
+
+  it('coalesces bulk withdrawals and takes unread state from the refreshed list', async () => {
+    expectChats().flush(
+      structuredClone({
+        chatSettings: { showMembershipMessages: true },
+        chats: [{ ...wireChat, lastMessage: wireMessage, unreadCount: 7 }],
+      }),
+    );
+    await settle();
+    const change = {
+      type: ServerWsMessageType.messagesBulkDeleted as const,
+      payload: { chatId: testChat.id, messageIds: [testMessage.id, encodeId('100')] },
+    };
+    messages.acceptChange(change);
+    messages.acceptChange(change);
+    expect(query.items()[0]).toMatchObject({
+      lastMessage: { isDeleted: true, attachments: [], mentions: [] },
+      unreadCount: 7,
+    });
+    await settle();
+    expectChats({ limit: 1, chatId: wireChat.id, archived: false }).flush(
+      structuredClone({
+        chatSettings: { showMembershipMessages: true },
+        chats: [{ ...wireChat, lastMessage: { ...wireMessage, isDeleted: true }, unreadCount: 4 }],
+      }),
+    );
+    peer.expectNone('chats.getUnreadCount');
+    await settle();
+    expect(query.items()[0].unreadCount).toBe(4);
+  });
+
+  it('ignores topic edits and reaction broadcasts, and reloads hidden changed chats on return', async () => {
+    expectChats().flush(
+      structuredClone({
+        chatSettings: { showMembershipMessages: true },
+        chats: [{ ...wireChat, lastMessage: wireMessage }],
+      }),
+    );
+    await settle();
+    messages.acceptChange({
+      type: ServerWsMessageType.messageUpdated,
+      payload: { ...testMessage, replyRootId: encodeId('100'), message: '话题回复' },
+    });
+    messages.acceptChange({
+      type: ServerWsMessageType.reactionUpdated,
+      payload: { chatId: testChat.id, messageId: testMessage.id, reactions: [] },
+    });
+    await settle();
+    peer.expectNone('chats.list');
+    releaseQuery();
+    messages.acceptChange({ type: ServerWsMessageType.messageDeleted, payload: { ...testMessage, isDeleted: true } });
+    expect(query.items()[0].lastMessage?.isDeleted).toBe(true);
+    await settle();
+    peer.expectNone('chats.list');
+    releaseQuery = query.activate();
+    await settle();
+    expectChats({ limit: 1, chatId: wireChat.id, archived: false }).flush(
+      structuredClone({
+        chatSettings: { showMembershipMessages: true },
+        chats: [{ ...wireChat, lastMessage: { ...wireMessage, isDeleted: true } }],
+      }),
+    );
+    await settle();
+    expect(query.items()[0].lastMessage?.isDeleted).toBe(true);
+  });
+
+  it('coalesces visible messages into one read and keeps its result over an older chat-list response', async () => {
+    expectChats().flush(structuredClone({ chatSettings: { showMembershipMessages: true }, chats: [wireChat] }));
+    await settle();
+    TestBed.tick();
+    query.refresh();
+    const oldList = expectChats();
+    vi.useFakeTimers();
+    const reading = data['chatInfo'].markRead(testChat.id, encodeId('9007199254741000'));
+    const newer = data['chatInfo'].markRead(testChat.id, testMessage.id);
+    data['chatInfo'].markRead(testChat.id, encodeId('9007199254741001'));
+    await vi.advanceTimersByTimeAsync(1000);
+    const request = expectMarkRead(decodeId(testChat.id), wireMessage.id);
+    request.flush(structuredClone({ lastReadMessageId: wireMessage.id, unreadCount: 1 }));
+    await Promise.all([reading, newer]);
+    oldList.flush(structuredClone({ chatSettings: { showMembershipMessages: true }, chats: [wireChat] }));
+    await settle();
+    expect(query.items()[0].lastReadMessageId).toBe(testMessage.id);
+    expect(query.items()[0].unreadCount).toBe(1);
+    await data['chatInfo'].markRead(testChat.id, encodeId('9007199254741000'));
+    peer.expectNone('chats.getUnreadCount');
+  });
+
+  it('serializes read requests while retaining the largest next visible message', async () => {
+    expectChats().flush(structuredClone({ chatSettings: { showMembershipMessages: true }, chats: [wireChat] }));
+    await settle();
+    TestBed.tick();
+    vi.useFakeTimers();
+    const reading = data['chatInfo'].markRead(testChat.id, testMessage.id);
+    await vi.advanceTimersByTimeAsync(1000);
+    const first = expectMarkRead(decodeId(testChat.id), wireMessage.id);
+    data['chatInfo'].markRead(testChat.id, encodeId('9007199254741010'));
+    data['chatInfo'].markRead(testChat.id, encodeId('9007199254741009'));
+    await vi.advanceTimersByTimeAsync(1000);
+    peer.expectNone('chats.markAsRead');
+    first.flush(structuredClone({ lastReadMessageId: wireMessage.id, unreadCount: 4 }));
+    await vi.advanceTimersByTimeAsync(1000);
+    const second = expectMarkRead(decodeId(testChat.id), '9007199254741010');
+    second.flush({ lastReadMessageId: '9007199254741010', unreadCount: 0 });
+    await reading;
+    expect(query.items()[0].unreadCount).toBe(0);
+  });
+
+  it('discards an unread snapshot when a newer live message arrives during its request', async () => {
+    expectChats().flush(structuredClone({ chatSettings: { showMembershipMessages: true }, chats: [wireChat] }));
+    await settle();
+    TestBed.tick();
+    const refreshing = data['chatInfo']['refreshUnread'](testChat.id);
+    await flushReads();
+    const stale = expectUnread(decodeId(testChat.id));
+    incoming.next(testMessage);
+    stale.flush({ lastReadMessageId: '9007199254741000', unreadCount: 0 });
+    await settle();
+    expect(query.items()[0].unreadCount).toBe(testChat.unreadCount);
+    await flushReads();
+    expectUnread(decodeId(testChat.id)).flush({
+      lastReadMessageId: '9007199254741000',
+      unreadCount: 1,
+    });
+    expect(await refreshing).toEqual({ lastReadMessageId: encodeId('9007199254741000'), unreadCount: 1 });
+    expect(query.items()[0].unreadCount).toBe(1);
+  });
+
+  it('applies the server read advancement after our own send, including duplicate RPC-result and WebSocket delivery', async () => {
+    vi.spyOn(TestBed.inject(SessionStore), 'user').mockReturnValue(testUser);
+    expectChats().flush(structuredClone({ chatSettings: { showMembershipMessages: true }, chats: [wireChat] }));
+    await settle();
+    TestBed.tick();
+    const initialRead = data['chatInfo']['refreshUnread'](testChat.id);
+    await flushReads();
+    expectUnread(decodeId(testChat.id)).flush(structuredClone({ unreadCount: wireChat.unreadCount }));
+    await initialRead;
+    // A concurrent list fetch can discover our send before either send-response delivery path.
+    query.refresh();
+    expectChats().flush(
+      structuredClone({
+        chatSettings: { showMembershipMessages: true },
+        chats: [{ ...wireChat, lastMessage: wireMessage }],
+      }),
+    );
+    await settle();
+    incoming.next(testMessage);
+    messages.accept(testMessage);
+    await flushReads();
+    expectUnread(decodeId(testChat.id)).flush(
+      structuredClone({
+        lastReadMessageId: wireMessage.id,
+        unreadCount: 0,
+      }),
+    );
+    await settle();
+    expect(query.items()[0].lastReadMessageId).toBe(testMessage.id);
+    expect(query.items()[0].unreadCount).toBe(0);
+  });
+
+  it('applies a read response immediately and prevents an older in-flight unread snapshot from undoing it', async () => {
+    expectChats().flush(structuredClone({ chatSettings: { showMembershipMessages: true }, chats: [wireChat] }));
+    await settle();
+    TestBed.tick();
+    const refreshing = data['chatInfo']['refreshUnread'](testChat.id);
+    await flushReads();
+    const oldUnread = expectUnread(decodeId(testChat.id));
+    vi.useFakeTimers();
+    const reading = data['chatInfo'].markRead(testChat.id, testMessage.id);
+    await vi.advanceTimersByTimeAsync(1000);
+    expectMarkRead(decodeId(testChat.id), wireMessage.id).flush(
+      structuredClone({
+        lastReadMessageId: wireMessage.id,
+        unreadCount: 0,
+      }),
+    );
+    await settle();
+    expect(query.items()[0].unreadCount).toBe(0);
+    oldUnread.flush({ lastReadMessageId: null, unreadCount: 2 });
+    await settle();
+    expect(query.items()[0].lastReadMessageId).toBe(testMessage.id);
+    await flushReads();
+    expectUnread(decodeId(testChat.id)).flush(
+      structuredClone({
+        lastReadMessageId: wireMessage.id,
+        unreadCount: 1,
+      }),
+    );
+    await Promise.all([refreshing, reading]);
+    expect(query.items()[0].unreadCount).toBe(1);
+  });
+
+  it('reconciles a live message that arrived after the read command started', async () => {
+    expectChats().flush(structuredClone({ chatSettings: { showMembershipMessages: true }, chats: [wireChat] }));
+    await settle();
+    TestBed.tick();
+    vi.useFakeTimers();
+    const reading = data['chatInfo'].markRead(testChat.id, testMessage.id);
+    await vi.advanceTimersByTimeAsync(1000);
+    const read = expectMarkRead(decodeId(testChat.id), wireMessage.id);
+    incoming.next({ ...testMessage, id: encodeId('9007199254741010') });
+    await flushReads();
+    expectUnread(decodeId(testChat.id)).flush({ unreadCount: 4 });
+    await vi.advanceTimersByTimeAsync(0);
+    read.flush(structuredClone({ lastReadMessageId: wireMessage.id, unreadCount: 1 }));
+    await settle();
+    expect(query.items()[0].unreadCount).toBe(1);
+    await flushReads();
+    expectUnread(decodeId(testChat.id)).flush(structuredClone({ lastReadMessageId: wireMessage.id, unreadCount: 2 }));
+    await reading;
+    expect(query.items()[0].unreadCount).toBe(2);
+  });
+
+  it('refreshes read state for out-of-order delivery while preserving the newest preview', async () => {
+    expectChats().flush(structuredClone({ chatSettings: { showMembershipMessages: true }, chats: [wireChat] }));
+    await settle();
+    TestBed.tick();
+    incoming.next({ ...testMessage, id: encodeId('9007199254741010') });
+    await flushReads();
+    expectUnread(decodeId(testChat.id)).flush({ unreadCount: 5 });
+    await settle();
+    await settle();
+    incoming.next(testMessage);
+    await flushReads();
+    expectUnread(decodeId(testChat.id)).flush(structuredClone({ lastReadMessageId: wireMessage.id, unreadCount: 1 }));
+    await settle();
+    expect(query.items()[0].lastMessage?.id).toBe(encodeId('9007199254741010'));
+    expect(query.items()[0].lastReadMessageId).toBe(testMessage.id);
+    expect(query.items()[0].unreadCount).toBe(1);
+  });
+
+  it('can retry a failed read without advancing the local pointer prematurely', async () => {
+    expectChats().flush(structuredClone({ chatSettings: { showMembershipMessages: true }, chats: [wireChat] }));
+    await settle();
+    TestBed.tick();
+    vi.useFakeTimers();
+    const failed = expect(data['chatInfo'].markRead(testChat.id, testMessage.id)).rejects.toBeDefined();
+    await vi.advanceTimersByTimeAsync(1000);
+    expectMarkRead(decodeId(testChat.id), wireMessage.id).error(RpcErrorCode.Internal, 'Internal error');
+    await failed;
+    expect(query.items()[0].lastReadMessageId).toBeUndefined();
+    const retry = data['chatInfo'].markRead(testChat.id, testMessage.id);
+    await vi.advanceTimersByTimeAsync(1000);
+    expectMarkRead(decodeId(testChat.id), wireMessage.id).flush(
+      structuredClone({ lastReadMessageId: wireMessage.id, unreadCount: 0 }),
+    );
+    await retry;
+  });
+
+  it('discards a throttled read when marking unread and retains a later newly queued read', async () => {
+    expectChats().flush(
+      structuredClone({
+        chatSettings: { showMembershipMessages: true },
+        chats: [{ ...wireChat, lastReadMessageId: '200', unreadCount: 1 }],
+      }),
+    );
+    await settle();
+    vi.useFakeTimers();
+    const oldRead = data['chatInfo'].markRead(testChat.id, encodeId('201'));
+    const unread = data['chatInfo'].markUnread(testChat.id);
+    expect(data['chatInfo'].markUnread(testChat.id)).toBe(unread);
+    await flushReads();
+    const request = expectMarkUnread(decodeId(testChat.id));
+    await data['chatInfo'].markRead(testChat.id, encodeId('202'));
+    request.flush({ lastReadMessageId: '200', unreadCount: 1 });
+    await unread;
+    await vi.advanceTimersByTimeAsync(500);
+    const nextRead = data['chatInfo'].markRead(testChat.id, encodeId('202'));
+    await vi.advanceTimersByTimeAsync(500);
+    await oldRead;
+    peer.expectNone('chats.markAsRead');
+    expect(data['chatInfo'].markRead(testChat.id, encodeId('203'))).toBe(nextRead);
+    await vi.advanceTimersByTimeAsync(500);
+    const next = expectMarkRead(decodeId(testChat.id), '203');
+    next.flush({ lastReadMessageId: '203', unreadCount: 0 });
+    await nextRead;
+  });
+
+  it('waits for a sent read, drops its queued target, and accepts the authoritative unread rewind', async () => {
+    expectChats().flush(
+      structuredClone({
+        chatSettings: { showMembershipMessages: true },
+        chats: [{ ...wireChat, lastReadMessageId: '200', unreadCount: 1 }],
+      }),
+    );
+    await settle();
+    vi.useFakeTimers();
+    const reading = data['chatInfo'].markRead(testChat.id, encodeId('201'));
+    await vi.advanceTimersByTimeAsync(1000);
+    const read = expectMarkRead(decodeId(testChat.id), '201');
+    data['chatInfo'].markRead(testChat.id, encodeId('205'));
+    const unread = data['chatInfo'].markUnread(testChat.id);
+    await data['chatInfo'].markRead(testChat.id, encodeId('206'));
+    peer.expectNone('chats.getUnreadCount');
+    read.flush({ lastReadMessageId: '201', unreadCount: 0 });
+    await reading;
+    await settle();
+    await flushReads();
+    const request = expectMarkUnread(decodeId(testChat.id));
+    request.flush({ lastReadMessageId: '200', unreadCount: 1 });
+    await unread;
+    await vi.advanceTimersByTimeAsync(2000);
+    peer.expectNone('chats.markAsRead');
+    expect(query.items()[0].lastReadMessageId).toBe(encodeId('200'));
+    expect(query.items()[0].unreadCount).toBe(1);
+  });
+
+  it('still marks unread after a previously sent read fails', async () => {
+    expectChats().flush(structuredClone({ chatSettings: { showMembershipMessages: true }, chats: [wireChat] }));
+    await settle();
+    vi.useFakeTimers();
+    const reading = expect(data['chatInfo'].markRead(testChat.id, encodeId('201'))).rejects.toBeDefined();
+    await vi.advanceTimersByTimeAsync(1000);
+    const unread = data['chatInfo'].markUnread(testChat.id);
+    expectMarkRead(decodeId(testChat.id), '201').error(RpcErrorCode.Internal, 'Internal error');
+    await reading;
+    await settle();
+    await flushReads();
+    expectMarkUnread(decodeId(testChat.id)).flush({ lastReadMessageId: '200', unreadCount: 1 });
+    await unread;
+    expect(query.items()[0].lastReadMessageId).toBe(encodeId('200'));
+  });
+
+  it('prevents an old unread snapshot from overriding a successful rewind', async () => {
+    expectChats().flush(
+      structuredClone({
+        chatSettings: { showMembershipMessages: true },
+        chats: [{ ...wireChat, lastReadMessageId: '201', unreadCount: 0 }],
+      }),
+    );
+    await settle();
+    const refreshing = data['chatInfo']['refreshUnread'](testChat.id);
+    await flushReads();
+    const stale = expectUnread(decodeId(testChat.id));
+    const unread = data['chatInfo'].markUnread(testChat.id);
+    expectMarkUnread(decodeId(testChat.id)).flush({ lastReadMessageId: '200', unreadCount: 1 });
+    await settle();
+    expect(query.items()[0].lastReadMessageId).toBe(encodeId('200'));
+    stale.flush({ lastReadMessageId: '201', unreadCount: 0 });
+    await settle();
+    expect(query.items()[0].lastReadMessageId).toBe(encodeId('200'));
+    await flushReads();
+    const fresh = expectUnread(decodeId(testChat.id));
+    fresh.flush({ lastReadMessageId: '200', unreadCount: 1 });
+    await Promise.all([refreshing, unread]);
+    expect(query.items()[0].unreadCount).toBe(1);
+  });
+
+  it('reconciles a new message received while the unread command response was delayed', async () => {
+    expectChats().flush(
+      structuredClone({
+        chatSettings: { showMembershipMessages: true },
+        chats: [{ ...wireChat, lastReadMessageId: '201', unreadCount: 0 }],
+      }),
+    );
+    await settle();
+    const unread = data['chatInfo'].markUnread(testChat.id);
+    await flushReads();
+    const delayed = expectMarkUnread(decodeId(testChat.id));
+    incoming.next(testMessage);
+    await flushReads();
+    expectUnread(decodeId(testChat.id)).flush({ lastReadMessageId: '200', unreadCount: 2 });
+    await settle();
+    delayed.flush({ lastReadMessageId: '200', unreadCount: 1 });
+    await settle();
+    await flushReads();
+    expectUnread(decodeId(testChat.id)).flush({ lastReadMessageId: '200', unreadCount: 2 });
+    await unread;
+    expect(query.items()[0].unreadCount).toBe(2);
+  });
+
+  it('preserves state on a failed unread command and permits retry', async () => {
+    expectChats().flush(
+      structuredClone({
+        chatSettings: { showMembershipMessages: true },
+        chats: [{ ...wireChat, lastReadMessageId: '201', unreadCount: 0 }],
+      }),
+    );
+    await settle();
+    const failed = expect(data['chatInfo'].markUnread(testChat.id)).rejects.toBeDefined();
+    await flushReads();
+    expectMarkUnread(decodeId(testChat.id)).error(RpcErrorCode.Internal, 'Internal error');
+    await failed;
+    expect(query.items()[0].lastReadMessageId).toBe(encodeId('201'));
+    const retry = data['chatInfo'].markUnread(testChat.id);
+    await flushReads();
+    expectMarkUnread(decodeId(testChat.id)).flush({ lastReadMessageId: '200', unreadCount: 1 });
+    await retry;
+    expect(query.items()[0].lastReadMessageId).toBe(encodeId('200'));
+  });
+
+  it('mutes a direct chat indefinitely using server metadata and reconciles later remote changes', async () => {
+    const chat = { ...wireChat, kind: GroupKind.dm, mutedUntil: null };
+    expectChats().flush(structuredClone({ chatSettings: { showMembershipMessages: true }, chats: [chat] }));
+    await settle();
+    const muting = data['chatInfo'].setMuted(testChat.id, true);
+    expect(data['chatInfo'].isMuted(testChat.id)).toBe(true);
+    const request = expectNotificationSetting(decodeId(testChat.id), 'alwaysMuted');
+    request.flush({ mutedUntil: null, muteOverride: true });
+    await muting;
+    TestBed.tick();
+    expect(query.items()[0].muteOverride).toBe(true);
+    expect(query.items()[0].archived).toBe(false);
+    peer.expectNone('chats.list');
+    await settle();
+    reconnect();
+    expectChats().flush(structuredClone({ chatSettings: { showMembershipMessages: true }, chats: [chat] }));
+    await settle();
+    expect(query.items()[0].mutedUntil).toBeNull();
+  });
+
+  it('enables notifications without unarchiving the conversation', async () => {
+    expectChats().flush({ chatSettings: { showMembershipMessages: true }, chats: [] });
+    await settle();
+    selectQuery(true);
+    TestBed.tick();
+    expectChats({ limit: 50, archived: true }).flush({
+      chatSettings: { showMembershipMessages: true },
+      chats: [{ ...wireChat, archived: true, mutedUntil: '9999-12-31T23:59:59Z', muteOverride: true }],
+    });
+    await settle();
+    const unmuting = data['chatInfo'].setMuted(testChat.id, false);
+    const request = expectNotificationSetting(decodeId(testChat.id), 'alwaysUnmuted');
+    request.flush({ archived: true, mutedUntil: null, muteOverride: false });
+    await unmuting;
+    TestBed.tick();
+    expect(query.items()[0]).toMatchObject({ archived: true, muteOverride: false });
+    expect(data['chatInfo'].isMuted(testChat.id)).toBe(false);
+    peer.expectNone('chats.list');
+  });
+
+  it('updates mute immediately and restores the original metadata when the command fails', async () => {
+    expectChats().flush(
+      structuredClone({
+        chatSettings: { showMembershipMessages: true },
+        chats: [{ ...wireChat, mutedUntil: null }],
+      }),
+    );
+    await settle();
+    const failed = expect(data['chatInfo'].setMuted(testChat.id, true)).rejects.toBeDefined();
+    expect(data['chatInfo'].isMuted(testChat.id)).toBe(true);
+    expectNotificationSetting(decodeId(testChat.id), 'alwaysMuted').error(RpcErrorCode.Internal, 'Internal error');
+    await failed;
+    expect(query.items()[0].mutedUntil).toBeNull();
+  });
+
+  it('joins an existing read-state request without invalidating it and fetches a missing deep link', async () => {
+    expectChats().flush({ chatSettings: { showMembershipMessages: true }, chats: [] });
+    await settle();
+    const first = data['chatInfo'].getReadState(testChat.id);
+    expect(data['chatInfo'].getReadState(testChat.id)).toBe(first);
+    await flushReads();
+    const initial = expectUnread(decodeId(testChat.id));
+    initial.flush({ lastReadMessageId: '200', unreadCount: 1 });
+    await first;
+    expect(data['chatInfo']['readOperations'].size).toBe(0);
+    reconnect();
+    const joined = data['chatInfo'].getReadState(testChat.id);
+    expectChats().flush({ chatSettings: { showMembershipMessages: true }, chats: [] });
+    await flushReads();
+    expectUnread(decodeId(testChat.id)).flush({ lastReadMessageId: '200', unreadCount: 2 });
+    expect(await joined).toEqual({ lastReadMessageId: encodeId('200'), unreadCount: 2 });
+    peer.expectNone('chats.getUnreadCount');
+  });
+
+  it('accepts a later list snapshot for read and preview state', async () => {
+    expectChats().flush(structuredClone({ chatSettings: { showMembershipMessages: true }, chats: [wireChat] }));
+    await settle();
+    incoming.next(testMessage);
+    await flushReads();
+    expectUnread(decodeId(testChat.id)).flush(structuredClone({ lastReadMessageId: wireMessage.id, unreadCount: 0 }));
+    await settle();
+    expect(data['chatInfo']['readOperations'].size).toBe(0);
+    expect(data['chatInfo'].cachedReadState(testChat.id)?.unreadCount).toBe(0);
+    data.refreshChats();
+    TestBed.tick();
+    peer.expectNone('chats.getUnreadCount');
+    // A different device marked this conversation unread after our previous snapshot.
+    expectChats().flush(
+      structuredClone({
+        chatSettings: { showMembershipMessages: true },
+        chats: [{ ...wireChat, lastMessage: wireMessage, lastReadMessageId: '200', unreadCount: 2 }],
+      }),
+    );
+    await settle();
+    expect(query.items()[0]).toMatchObject({ lastReadMessageId: encodeId('200'), unreadCount: 2 });
+  });
+
+  it('deduplicates reads for deep links and reloads their state on demand after reconnect', async () => {
+    expectChats().flush({ chatSettings: { showMembershipMessages: true }, chats: [] });
+    await settle();
+    vi.useFakeTimers();
+    const reading = data['chatInfo'].markRead(testChat.id, testMessage.id);
+    await vi.advanceTimersByTimeAsync(1000);
+    expectMarkRead(decodeId(testChat.id), wireMessage.id).flush(
+      structuredClone({ lastReadMessageId: wireMessage.id, unreadCount: 0 }),
+    );
+    await reading;
+    await data['chatInfo'].markRead(testChat.id, testMessage.id);
+    await vi.advanceTimersByTimeAsync(1000);
+    peer.expectNone('chats.markAsRead');
+    reconnect();
+    const joined = data['chatInfo'].getReadState(testChat.id);
+    expectChats().flush({ chatSettings: { showMembershipMessages: true }, chats: [] });
+    await flushReads();
+    expectUnread(decodeId(testChat.id)).flush(structuredClone({ lastReadMessageId: wireMessage.id, unreadCount: 1 }));
+    await joined;
+    expect(data['chatInfo']['readOperations'].size).toBe(0);
+    reconnect();
+    peer.expectNone('chats.getUnreadCount');
+    expectChats().flush({ chatSettings: { showMembershipMessages: true }, chats: [] });
+    await settle();
+  });
+
+  it('keeps a new read over an older list response and accepts the next reload', async () => {
+    expectChats().flush(structuredClone({ chatSettings: { showMembershipMessages: true }, chats: [wireChat] }));
+    await settle();
+    data.refreshChats();
+    TestBed.tick();
+    const oldList = expectChats();
+    vi.useFakeTimers();
+    const reading = data['chatInfo'].markRead(testChat.id, testMessage.id);
+    await vi.advanceTimersByTimeAsync(1000);
+    expectMarkRead(decodeId(testChat.id), wireMessage.id).flush(
+      structuredClone({ lastReadMessageId: wireMessage.id, unreadCount: 0 }),
+    );
+    await reading;
+    oldList.flush(structuredClone({ chatSettings: { showMembershipMessages: true }, chats: [wireChat] }));
+    await settle();
+    expect(query.items()[0]).toMatchObject({ lastReadMessageId: testMessage.id, unreadCount: 0 });
+    data.refreshChats();
+    TestBed.tick();
+    expectChats().flush(
+      structuredClone({
+        chatSettings: { showMembershipMessages: true },
+        chats: [{ ...wireChat, lastReadMessageId: wireMessage.id, unreadCount: 1 }],
+      }),
+    );
+    await settle();
+    expect(query.items()[0].unreadCount).toBe(1);
+  });
+
+  it('keeps an open conversation read pointer when a fresh list later switches to another query', async () => {
+    const chat = { ...wireChat, lastReadMessageId: wireMessage.id, unreadCount: 0 };
+    expectChats().flush(structuredClone({ chatSettings: { showMembershipMessages: true }, chats: [chat] }));
+    await settle();
+    query.refresh();
+    peer.expectNone('chats.getUnreadCount');
+    TestBed.tick();
+    expectChats().flush(structuredClone({ chatSettings: { showMembershipMessages: true }, chats: [chat] }));
+    await settle();
+    selectQuery(true);
+    TestBed.tick();
+    expectChats({ limit: 50, archived: true }).flush({ chatSettings: { showMembershipMessages: true }, chats: [] });
+    await settle();
+    vi.useFakeTimers();
+    const reading = data['chatInfo'].markRead(testChat.id, testMessage.id);
+    await vi.advanceTimersByTimeAsync(1000);
+    peer.expectNone('chats.markAsRead');
+    await reading;
+  });
+
+  it('keeps historical chats without refreshing their reads in the background', async () => {
+    expectChats().flush(structuredClone({ chatSettings: { showMembershipMessages: true }, chats: [wireChat] }));
+    await settle();
+    incoming.next(testMessage);
+    await flushReads();
+    expectUnread(decodeId(testChat.id)).flush({ unreadCount: 1 });
+    await settle();
+    selectQuery(true);
+    TestBed.tick();
+    expectChats({ limit: 50, archived: true }).flush({ chatSettings: { showMembershipMessages: true }, chats: [] });
+    await settle();
+    expect(data['chatInfo']['readOperations'].size).toBe(0);
+    reconnect();
+    peer.expectNone('chats.getUnreadCount');
+    expectChats({ limit: 50, archived: true }).flush({ chatSettings: { showMembershipMessages: true }, chats: [] });
+    await settle();
+  });
+
+  it('cancels a pending read delay and the list request when the service is destroyed', async () => {
+    const list = expectChats();
+    vi.useFakeTimers();
+    const reading = data['chatInfo'].markRead(testChat.id, testMessage.id);
+    TestBed.resetTestingModule();
+    list.flush({ chatSettings: { showMembershipMessages: true }, chats: [wireChat] });
+    expect(query.items()).toEqual([]);
+    await reading;
+    await vi.advanceTimersByTimeAsync(2000);
+    incoming.next(testMessage);
+    resync.next();
+    peer.expectNone('chats.markAsRead');
+    expect(data['chatInfo']['readOperations'].size).toBe(0);
+  });
+
+  it('cancels unread RPC reconciliation on destruction and does not start its queued retry', async () => {
+    expectChats().flush(structuredClone({ chatSettings: { showMembershipMessages: true }, chats: [wireChat] }));
+    await settle();
+    data['chatInfo'].invalidateReads(new Set([testChat.id]));
+    const refreshing = expect(data['chatInfo'].getReadState(testChat.id)).rejects.toBeDefined();
+    await flushReads();
+    const unread = expectUnread(decodeId(testChat.id));
+    incoming.next(testMessage);
+    TestBed.resetTestingModule();
+    unread.flush({ lastReadMessageId: wireMessage.id, unreadCount: 1 });
+    await refreshing;
+    await settle();
+    expect(data['chatInfo']['readOperations'].size).toBe(0);
+    peer.expectNone('chats.getUnreadCount');
+  });
+
+  it('shares a stable query, its initial request and pagination until its last consumer leaves', async () => {
+    expect(data.chats(false)).toBe(query);
+    data.chats(true);
+    const initial = expectChats();
+    peer.expectNone('chats.list');
+    const releaseSecond = data.chats(false).activate();
+    releaseQuery();
+    initial.flush(
+      structuredClone({
+        chatSettings: { showMembershipMessages: true },
+        chats: [wireChat],
+        nextCursor: '9007199254740993',
+      }),
+    );
+    await settle();
+    const paging = query.loadMore();
+    expect(query.loadMore()).toBe(paging);
+    const page = expectChats({ limit: 50, after: '9007199254740993' });
+    releaseSecond();
+    page.flush({ chatSettings: { showMembershipMessages: true }, chats: [{ ...wireChat, id: '9007199254740995' }] });
+    await paging;
+    expect(query.items()).toEqual([testChat]);
+    expect(query.loadingMore()).toBe(false);
+    query.activate();
+    await settle();
+    peer.expectNone('chats.list');
+    expect(query.items()).toEqual([testChat]);
+  });
+
+  it('cancels a departing query page without applying it to the other query', async () => {
+    expectChats().flush(
+      structuredClone({
+        chatSettings: { showMembershipMessages: true },
+        chats: [wireChat],
+        nextCursor: '9007199254740993',
+      }),
+    );
+    await settle();
+    const regular = query;
+    const paging = query.loadMore();
+    const old = expectChats({ limit: 50, after: '9007199254740993' });
+    selectQuery(true);
+    old.flush({ chatSettings: { showMembershipMessages: true }, chats: [{ ...wireChat, id: '9007199254740996' }] });
+    expectChats({ limit: 50, archived: true }).flush(
+      structuredClone({
+        chatSettings: { showMembershipMessages: true },
+        chats: [{ ...wireChat, id: '9007199254740995', archived: true }],
+      }),
+    );
+    await paging;
+    await settle();
+    expect(query.items().map((chat) => chat.id)).toEqual([encodeId('9007199254740995')]);
+    expect(regular.items()).toEqual([testChat]);
+    selectQuery(false);
+    await settle();
+    peer.expectNone('chats.list');
+    expect(query.hasMore()).toBe(true);
+  });
+
+  it('merges a recent conversation before an older pagination response without losing either page', async () => {
+    expectChats().flush(
+      structuredClone({
+        chatSettings: { showMembershipMessages: true },
+        chats: [wireChat],
+        nextCursor: '9007199254740993',
+      }),
+    );
+    await settle();
+    const paging = query.loadMore();
+    const old = expectChats({ limit: 50, after: '9007199254740993' });
+    const otherId = encodeId('9007199254740995');
+    incoming.next({ ...testMessage, chatId: otherId });
+    await flushReads();
+    peer.expectNone('chats.getUnreadCount');
+    expectChats().flush(
+      structuredClone({
+        chatSettings: { showMembershipMessages: true },
+        chats: [
+          {
+            ...wireChat,
+            id: '9007199254740995',
+            lastMessage: wireMessage,
+            lastReadMessageId: wireMessage.id,
+            unreadCount: 0,
+          },
+        ],
+      }),
+    );
+    await settle();
+    old.flush(
+      structuredClone({
+        chatSettings: { showMembershipMessages: true },
+        chats: [{ ...wireChat, id: '9007199254740997' }],
+        nextCursor: null,
+      }),
+    );
+    await paging;
+    expect(new Set(query.items().map((chat) => chat.id))).toEqual(
+      new Set([testChat.id, otherId, encodeId('9007199254740997')]),
+    );
+    expect(data['chatInfo'].cachedReadState(otherId)?.lastReadMessageId).toBe(testMessage.id);
+    expect(query.hasMore()).toBe(false);
+  });
+
+  it('does not expose an obsolete by-id count after live unread reconciliation fails', async () => {
+    expectChats().flush(structuredClone({ chatSettings: { showMembershipMessages: true }, chats: [wireChat] }));
+    await settle();
+    incoming.next(testMessage);
+    const failed = expect(data['chatInfo'].getReadState(testChat.id)).rejects.toBeDefined();
+    await flushReads();
+    expectUnread(decodeId(testChat.id)).error(RpcErrorCode.Internal, 'Internal error');
+    await failed;
+    await settle();
+    expect(data['chatInfo'].cachedReadState(testChat.id)).toBeUndefined();
+    expect(query.error()).toBe(ChatListError.Unread);
+    query.refresh();
+    expectChats().flush(
+      structuredClone({
+        chatSettings: { showMembershipMessages: true },
+        chats: [{ ...wireChat, unreadCount: 4 }],
+      }),
+    );
+    await settle();
+    expect(data['chatInfo'].cachedReadState(testChat.id)?.unreadCount).toBe(4);
+  });
+
+  it('serves a fresh by-id read snapshot across queries and falls back after hidden invalidation', async () => {
+    expectChats().flush(
+      structuredClone({
+        chatSettings: { showMembershipMessages: true },
+        chats: [{ ...wireChat, lastReadMessageId: '200', unreadCount: 3 }],
+      }),
+    );
+    await settle();
+    const regular = query;
+    selectQuery(true);
+    expectChats({ limit: 50, archived: true }).flush({ chatSettings: { showMembershipMessages: true }, chats: [] });
+    await settle();
+    expect(data['chatInfo'].cachedReadState(testChat.id)).toMatchObject({
+      lastReadMessageId: encodeId('200'),
+      unreadCount: 3,
+      unreadMentions: 0,
+      unreadReactions: 0,
+    });
+    data.refreshChats();
+    expect(data['chatInfo'].cachedReadState(testChat.id)).toBeUndefined();
+    expectChats({ limit: 50, archived: true }).flush({ chatSettings: { showMembershipMessages: true }, chats: [] });
+    await settle();
+    expect(regular.items()[0].unreadCount).toBe(3);
+    selectQuery(false);
+    expectChats().flush(
+      structuredClone({
+        chatSettings: { showMembershipMessages: true },
+        chats: [{ ...wireChat, lastReadMessageId: '199', unreadCount: 4 }],
+      }),
+    );
+    await settle();
+    expect(data['chatInfo'].cachedReadState(testChat.id)).toMatchObject({
+      lastReadMessageId: encodeId('199'),
+      unreadCount: 4,
+      unreadMentions: 0,
+      unreadReactions: 0,
+    });
+  });
+
+  it('keeps hidden rows and defers unread reads until they are shown', async () => {
+    expectChats().flush(structuredClone({ chatSettings: { showMembershipMessages: true }, chats: [wireChat] }));
+    await settle();
+    releaseQuery();
+    incoming.next(testMessage);
+    peer.expectNone('chats.list');
+    await flushReads();
+    peer.expectNone('chats.getUnreadCount');
+    releaseQuery = query.activate();
+    await flushReads();
+    const unread = expectUnread(decodeId(testChat.id));
+    expect(data['chatInfo'].cachedReadState(testChat.id)).toBeUndefined();
+    expect(query.items()).toHaveLength(1);
+    expect(query.items()[0].lastMessage?.id).toBe(testMessage.id);
+    unread.flush(structuredClone({ lastReadMessageId: wireMessage.id, unreadCount: 5 }));
+    await settle();
+    expect(query.items()[0].unreadCount).toBe(5);
+    peer.expectNone('chats.getUnreadCount');
+    peer.expectNone('chats.list');
+  });
+
+  it('reorders a covered list as soon as a live message arrives', async () => {
+    const olderId = encodeId('9007199254742001');
+    const newerId = encodeId('9007199254742003');
+    expectChats().flush(
+      structuredClone({
+        chatSettings: { showMembershipMessages: true },
+        chats: [
+          { ...wireChat, id: decodeId(newerId), name: '较新', lastMessageAt: '2026-09-05T12:00:00Z' },
+          { ...wireChat, id: decodeId(olderId), name: '较旧', lastMessageAt: '2026-09-05T11:00:00Z' },
+        ],
+      }),
+    );
+    await settle();
+    releaseQuery();
+    incoming.next({ ...testMessage, chatId: olderId, createdAt: '2026-09-05T12:30:00Z' });
+    expect(query.items().map((chat) => chat.id)).toEqual([olderId, newerId]);
+    expect(query.items()[0].lastMessage?.message).toBe(testMessage.message);
+    await flushReads();
+    peer.expectNone('chats.getUnreadCount');
+    await settle();
+  });
+
+  it('reads only the head page when a hidden list missed a new conversation', async () => {
+    expectChats().flush(
+      structuredClone({
+        chatSettings: { showMembershipMessages: true },
+        chats: [wireChat],
+        nextCursor: '9007199254740993',
+      }),
+    );
+    await settle();
+    releaseQuery();
+    const otherId = encodeId('9007199254740995');
+    incoming.next({ ...testMessage, chatId: otherId });
+    peer.expectNone('chats.list');
+    releaseQuery = query.activate();
+    expectChats().flush(
+      structuredClone({
+        chatSettings: { showMembershipMessages: true },
+        chats: [{ ...wireChat, id: decodeId(otherId) }],
+      }),
+    );
+    await settle();
+    expect(new Set(query.items().map((chat) => chat.id))).toEqual(new Set([testChat.id, otherId]));
+    expect(query.hasMore()).toBe(true);
+  });
+
+  it('removes departed chats when a refresh stops before the list tail', async () => {
+    const chats = Array.from({ length: 51 }, (_, index) => ({
+      ...wireChat,
+      id: String(9007199254000000 + index * 2),
+      lastMessageAt: new Date(Date.UTC(2026, 0, 1, 0, 59 - index)).toISOString(),
+    }));
+    expectChats().flush(
+      structuredClone({
+        chatSettings: { showMembershipMessages: true },
+        chats: chats.slice(0, 50),
+        nextCursor: chats[49].id,
+      }),
+    );
+    await settle();
+    data.refreshChats();
+    expect(query.items()).toHaveLength(50);
+    expectChats().flush(
+      structuredClone({
+        chatSettings: { showMembershipMessages: true },
+        chats: chats.slice(1),
+        nextCursor: chats[50].id,
+      }),
+    );
+    await settle();
+    expect(query.items().map((chat) => decodeId(chat.id))).toEqual(chats.slice(1).map((chat) => chat.id));
+    expect(query.hasMore()).toBe(true);
+  });
+
+  it.each([false, true])('bridges multiple hidden head pages with existing pagination=%s', async (paginated) => {
+    expectChats().flush(
+      structuredClone({
+        chatSettings: { showMembershipMessages: true },
+        chats: [{ ...wireChat, lastMessageAt: '2025-01-01T00:00:00Z' }],
+        ...(paginated ? { nextCursor: wireChat.id } : {}),
+      }),
+    );
+    await settle();
+    releaseQuery();
+    const chats = Array.from({ length: 51 }, (_, index) => ({
+      ...wireChat,
+      id: String(9007199254000000 + index * 2),
+      lastMessageAt: new Date(Date.UTC(2026, 0, 1, 0, 59 - index)).toISOString(),
+    }));
+    for (const chat of chats)
+      incoming.next({ ...testMessage, chatId: encodeId(chat.id), createdAt: chat.lastMessageAt });
+    releaseQuery = query.activate();
+    expectChats().flush(
+      structuredClone({
+        chatSettings: { showMembershipMessages: true },
+        chats: chats.slice(0, 50),
+        nextCursor: chats[49].id,
+      }),
+    );
+    await settle();
+    expectChats({ limit: 50, after: chats[49].id }).flush(
+      structuredClone({ chatSettings: { showMembershipMessages: true }, chats: chats.slice(50) }),
+    );
+    await settle();
+    expect(new Set(query.items().map((chat) => decodeId(chat.id)))).toEqual(
+      new Set([wireChat.id, ...chats.map((chat) => chat.id)]),
+    );
+    expect(query.hasMore()).toBe(paginated);
+    if (paginated) {
+      const loading = query.loadMore();
+      expectChats({ limit: 50, after: wireChat.id }).flush({
+        chatSettings: { showMembershipMessages: true },
+        chats: [],
+      });
+      await loading;
+    }
+  });
+
+  it('stops head reconciliation once it overlaps the previous coverage', async () => {
+    expectChats().flush(
+      structuredClone({
+        chatSettings: { showMembershipMessages: true },
+        chats: [{ ...wireChat, lastMessageAt: '2026-01-02T00:00:00Z' }],
+        nextCursor: wireChat.id,
+      }),
+    );
+    await settle();
+    releaseQuery();
+    const otherId = '9007199254000000';
+    incoming.next({ ...testMessage, chatId: encodeId(otherId) });
+    releaseQuery = query.activate();
+    expectChats().flush(
+      structuredClone({
+        chatSettings: { showMembershipMessages: true },
+        chats: [{ ...wireChat, id: otherId, lastMessageAt: '2026-01-03T00:00:00Z' }],
+        nextCursor: otherId,
+      }),
+    );
+    await settle();
+    const olderId = '9007199254000002';
+    expectChats({ limit: 50, after: otherId }).flush(
+      structuredClone({
+        chatSettings: { showMembershipMessages: true },
+        chats: [{ ...wireChat, id: olderId, lastMessageAt: '2026-01-01T00:00:00Z' }],
+        nextCursor: olderId,
+      }),
+    );
+    await settle();
+    peer.expectNone('chats.list');
+    expect(query.loadedThrough()).toBe(Date.parse('2026-01-02T00:00:00Z'));
+    const loading = query.loadMore();
+    expectChats({ limit: 50, after: wireChat.id }).flush({ chatSettings: { showMembershipMessages: true }, chats: [] });
+    await loading;
+  });
+
+  it('keeps the list through a foreground resync and reloads it after a reconnect', async () => {
+    expectChats().flush(structuredClone({ chatSettings: { showMembershipMessages: true }, chats: [wireChat] }));
+    await settle();
+    releaseQuery();
+    resync.next();
+    peer.expectNone('chats.list');
+    peer.expectNone('chats.getUnreadCount');
+    releaseQuery = query.activate();
+    peer.expectNone('chats.list');
+    TestBed.tick();
+    connected.set(false);
+    TestBed.tick();
+    connected.set(true);
+    TestBed.tick();
+    expectChats().flush(structuredClone({ chatSettings: { showMembershipMessages: true }, chats: [wireChat] }));
+    await settle();
+    expect(query.items()).toHaveLength(1);
+  });
+
+  it('does not use a stale cursor after a refresh fails', async () => {
+    expectChats().flush(
+      structuredClone({
+        chatSettings: { showMembershipMessages: true },
+        chats: [wireChat],
+        nextCursor: '9007199254740993',
+      }),
+    );
+    await settle();
+    query.refresh();
+    expectChats().error(RpcErrorCode.Internal, 'Internal error');
+    await settle();
+    expect(query.error()).toBe(ChatListError.Load);
+    expect(query.items()).toEqual([testChat]);
+    expect(query.hasMore()).toBe(false);
+    expect(data['chatInfo'].cachedReadState(testChat.id)).toBeUndefined();
+    await query.loadMore();
+    peer.expectNone('chats.list');
+  });
+
+  it('catches up an initial list with a fresh head snapshot instead of an extra unread refresh', async () => {
+    const initial = expectChats();
+    incoming.next(testMessage);
+    incoming.next(testMessage);
+    await flushReads();
+    peer.expectNone('chats.getUnreadCount');
+    initial.flush({
+      chatSettings: { showMembershipMessages: true },
+      chats: [],
+      nextCursor: '9007199254740993',
+    });
+    await settle();
+    expectChats().flush(
+      structuredClone({
+        chatSettings: { showMembershipMessages: true },
+        chats: [{ ...wireChat, lastMessage: wireMessage, lastReadMessageId: wireMessage.id, unreadCount: 0 }],
+      }),
+    );
+    await settle();
+    expect(query.items()[0]).toMatchObject({ lastReadMessageId: testMessage.id, unreadCount: 0 });
+    expect(query.items()[0].lastMessage?.id).toBe(testMessage.id);
+    expect(query.hasMore()).toBe(true);
+  });
+
+  it('shares the latest unread count when switching to a cached query', async () => {
+    expectChats().flush(
+      structuredClone({
+        chatSettings: { showMembershipMessages: true },
+        chats: [{ ...wireChat, lastReadMessageId: '200', unreadCount: 3 }],
+      }),
+    );
+    await settle();
+    const archived = data.chats(true);
+    archived.activate();
+    expectChats({ limit: 50, archived: true }).flush(
+      structuredClone({
+        chatSettings: { showMembershipMessages: true },
+        chats: [{ ...wireChat, archived: true, lastReadMessageId: '200', unreadCount: 3 }],
+      }),
+    );
+    await settle();
+    archived.refresh();
+    const old = expectChats({ limit: 50, archived: true });
+    vi.useFakeTimers();
+    const reading = data['chatInfo'].markRead(testChat.id, encodeId('205'));
+    await vi.advanceTimersByTimeAsync(1000);
+    expectMarkRead(decodeId(testChat.id), '205').flush({ lastReadMessageId: '205', unreadCount: 0 });
+    await reading;
+    query.refresh();
+    expectChats().flush(
+      structuredClone({
+        chatSettings: { showMembershipMessages: true },
+        chats: [{ ...wireChat, lastReadMessageId: '205', unreadCount: 0 }],
+      }),
+    );
+    await settle();
+    old.flush(
+      structuredClone({
+        chatSettings: { showMembershipMessages: true },
+        chats: [{ ...wireChat, archived: true, lastReadMessageId: '200', unreadCount: 3 }],
+      }),
+    );
+    await settle();
+    expect(query.items()[0].unreadCount).toBe(0);
+    expect(archived.items()).toEqual([]);
+    expect(data['chatInfo'].cachedReadState(testChat.id)).toMatchObject({
+      lastReadMessageId: encodeId('205'),
+      unreadCount: 0,
+      unreadMentions: 0,
+      unreadReactions: 0,
+    });
+  });
+  it('refreshes the loaded conversation depth and keeps the final paging cursor', async () => {
+    expectChats().flush(
+      structuredClone({
+        chatSettings: { showMembershipMessages: true },
+        chats: [structuredClone(wireChat)],
+        nextCursor: wireChat.id,
+      }),
+    );
+    await settle();
+    const olderChat = { ...wireChat, id: '9007199254740900', name: 'Older' };
+    const more = query.loadMore();
+    expectChats({ limit: 50, after: wireChat.id }).flush({
+      chatSettings: { showMembershipMessages: true },
+      chats: [structuredClone(olderChat)],
+      nextCursor: olderChat.id,
+    });
+    await more;
+    query.refresh();
+    expectChats().flush(
+      structuredClone({
+        chatSettings: { showMembershipMessages: true },
+        chats: [{ ...wireChat, name: 'Updated' }],
+        nextCursor: wireChat.id,
+      }),
+    );
+    await settle();
+    expect(query.items()).toHaveLength(2);
+    expectChats({ limit: 50, after: wireChat.id }).flush({
+      chatSettings: { showMembershipMessages: true },
+      chats: [structuredClone(olderChat)],
+      nextCursor: olderChat.id,
+    });
+    await settle();
+    expect(query.items().map((chat) => chat.name)).toEqual(['Updated', 'Older']);
+    const next = query.loadMore();
+    expectChats({ limit: 50, after: olderChat.id }).flush({
+      chatSettings: { showMembershipMessages: true },
+      chats: [],
+    });
+    await next;
+  });
+  it('removes an archived chat immediately and puts it back if the write fails', async () => {
+    expectChats().flush(structuredClone({ chatSettings: { showMembershipMessages: true }, chats: [wireChat] }));
+    await settle();
+    const operation = data['chatInfo'].setArchived(testChat.id, true);
+    const failed = expect(operation).rejects.toBeDefined();
+    expect(query.items()).toEqual([]);
+    expectArchive(wireChat.id).error(RpcErrorCode.Internal, 'Internal error');
+    await failed;
+    expect(query.items().map((chat) => chat.id)).toEqual([testChat.id]);
+    expect(data['chatInfo'].isMuted(testChat.id)).toBe(false);
+  });
+
+  it('does not undo a newer mute choice when an older request fails', async () => {
+    expectChats().flush(structuredClone({ chatSettings: { showMembershipMessages: true }, chats: [wireChat] }));
+    await settle();
+    const first = expect(data['chatInfo'].setMuted(testChat.id, true)).rejects.toBeDefined();
+    const old = expectNotificationSetting(wireChat.id, 'alwaysMuted');
+    const latest = data['chatInfo'].setMuted(testChat.id, false);
+    old.error(RpcErrorCode.Internal, 'Internal error');
+    await first;
+    expect(data['chatInfo'].isMuted(testChat.id)).toBe(false);
+    expectNotificationSetting(wireChat.id, 'alwaysUnmuted').flush(null);
+    await latest;
+    await settle();
+    peer.expectNone('chats.list');
+  });
+
+  it('keeps an inactive query empty when its cancelled list reply arrives late', async () => {
+    const request = expectChats();
+    releaseQuery();
+    request.flush({ chatSettings: { showMembershipMessages: true }, chats: [wireChat] });
+    await settle();
+    expect(query.items()).toEqual([]);
+  });
+
+  it('accepts a flat list result without rebuilding the active query', async () => {
+    const active = query;
+    expectChats().flush({ chatSettings: { showMembershipMessages: true }, chats: [wireChat] });
+    await settle();
+    expect(data.chats(false)).toBe(active);
+    expect(active.items()).toEqual([testChat]);
+  });
+});

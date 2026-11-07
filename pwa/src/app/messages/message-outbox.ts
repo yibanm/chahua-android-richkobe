@@ -1,0 +1,952 @@
+import {
+  computed,
+  DestroyRef,
+  effect,
+  inject,
+  Injector,
+  Service,
+  signal,
+  type Signal,
+  type WritableSignal,
+} from '@angular/core';
+import { AlertController } from '@ionic/angular';
+import { TranslocoService } from '@jsverse/transloco';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { filter, firstValueFrom, from, fromEvent, merge, Subject, takeUntil, timeout, type Observable } from 'rxjs';
+import { RpcApi } from '../../generated/rpc-api';
+import {
+  MessageType,
+  type SpeakingMode,
+  ServerWsMessageType,
+  type CreateMessageBody,
+  type ForwardMessagesBody,
+  type MessageResponse,
+  type MentionInfo,
+} from '../../generated/models';
+import { Connection } from '../api/connection';
+import { RpcError, RpcErrorCode, RpcTransportError } from '../api/rpc-error';
+import { speakingErrorMode } from '../chats/speaking';
+import type { SnowflakeID } from '../api/snowflake-id';
+import { SessionStore } from '../session/session-store';
+import type { Composition } from './message-composer/message-composer';
+import { forwardPreview, showsForwardOrigin } from './forwarding';
+import { MessageDelivery } from './message-delivery';
+import type { MessageContent } from './message/message';
+import { UploadStatus, type AttachmentUpload } from './upload';
+
+const REQUEST_TIMEOUT = 30_000;
+
+export interface OutgoingMessage {
+  readonly clientGeneratedId: string;
+  readonly chatId: SnowflakeID;
+  readonly editId?: SnowflakeID;
+  readonly threadId?: SnowflakeID;
+  readonly message: Signal<MessageContent>;
+  readonly uploads: readonly AttachmentUpload[];
+  readonly delivery: WritableSignal<MessageDelivery>;
+  readonly confirmed: WritableSignal<MessageResponse | undefined>;
+  readonly published: WritableSignal<boolean>;
+  readonly cancelled: Signal<boolean>;
+  readonly body: CreateMessageBody;
+  readonly forwarding?: boolean;
+  readonly speakingRestriction?: WritableSignal<SpeakingMode | undefined>;
+  operation?: Promise<void>;
+  disposed: boolean;
+}
+
+interface Submission {
+  forward?: ForwardMessagesBody;
+  body: CreateMessageBody;
+  uploads: readonly AttachmentUpload[];
+  revision: number;
+}
+interface Intent extends Submission {
+  local: MessageContent;
+  forwardComment?: { text: string; mentions?: MentionInfo[] };
+}
+interface Task {
+  intent: WritableSignal<Intent>;
+  acknowledged: WritableSignal<number>;
+  cancelled: WritableSignal<boolean>;
+  owned: Set<AttachmentUpload>;
+  changed: Subject<void>;
+  stopped: Subject<void>;
+  ready?: Submission;
+  create?: Submission;
+  patch?: Submission;
+  inflight?: Submission;
+  deletion?: Promise<void>;
+  deleted?: boolean;
+  compacted?: boolean;
+  checking?: boolean;
+  retryable: boolean;
+  reconnect?: boolean;
+  retryDelay: number;
+  timer?: ReturnType<typeof setTimeout>;
+}
+
+/** Owns submitted content and uploads independently of the mounted conversation. */
+@Service()
+export class MessageOutbox {
+  private readonly api = inject(RpcApi);
+  private readonly injector = inject(Injector);
+  private readonly connection = inject(Connection);
+  private readonly session = inject(SessionStore);
+  private readonly destroyRef = inject(DestroyRef);
+  private readonly pending = signal<OutgoingMessage[]>([]);
+  private readonly tasks = new WeakMap<OutgoingMessage, Task>();
+  readonly items = this.pending.asReadonly();
+
+  constructor() {
+    let owner = this.session.user()?.uid;
+    effect(() => {
+      const uid = this.session.user()?.uid;
+      if (uid !== owner) {
+        owner = uid;
+        this.clear();
+      }
+    });
+    this.connection.messages$.pipe(takeUntilDestroyed()).subscribe((message) => {
+      const item = this.pending().find((item) => !item.editId && this.matches(item, message));
+      if (item) this.created(item, message, true);
+    });
+    this.connection.changes$.pipe(takeUntilDestroyed()).subscribe((event) => {
+      for (const item of this.pending()) {
+        if (item.chatId !== event.payload.chatId) continue;
+        const id = item.editId ?? item.confirmed()?.id;
+        const task = this.tasks.get(item)!;
+        if (event.type === ServerWsMessageType.messageUpdated && event.payload.id === id) {
+          if (task.patch && matchesBody(event.payload, task.patch.body)) {
+            this.acknowledge(item, event.payload, task.patch, true);
+            this.pump();
+          }
+          if (item.cancelled()) void this.delete(item);
+        } else if (
+          (event.type === ServerWsMessageType.messageDeleted && event.payload.id === id) ||
+          (event.type === ServerWsMessageType.messagesBulkDeleted &&
+            id != null &&
+            event.payload.messageIds.includes(id))
+        ) {
+          task.cancelled.set(true);
+          task.deleted = true;
+          task.changed.next();
+          this.cleanUploads(item);
+          this.pump();
+        }
+      }
+    });
+    merge(this.connection.resync$, fromEvent(window, 'online'))
+      .pipe(takeUntilDestroyed())
+      .subscribe(() => {
+        for (const item of this.pending()) {
+          const task = this.tasks.get(item)!;
+          const message = item.confirmed();
+          if (message && !item.published()) void this.checkPublished(item, message.id);
+          if (!task.retryable) continue;
+          task.reconnect = !!(item.operation || task.deletion);
+          void this.retry(item);
+        }
+      });
+    this.destroyRef.onDestroy(() => this.clear());
+  }
+
+  private readonly sender = computed(() => {
+    const user = this.session.user();
+    return (
+      user && {
+        uid: user.uid,
+        name: user.username,
+        gender: user.gender,
+        avatarUrl: user.avatarUrl,
+        userGroup: user.userGroup,
+      }
+    );
+  });
+
+  enqueue(
+    chatId: SnowflakeID,
+    threadId: SnowflakeID | undefined,
+    text: string,
+    composition: Composition,
+    replyTo?: MessageResponse,
+    replyToId = replyTo?.id,
+  ) {
+    return this.add(chatId, threadId, {
+      body: {
+        clientGeneratedId: crypto.randomUUID(),
+        messageType: composition.messageType,
+        message: composition.messageType === MessageType.text ? text : undefined,
+        attachmentIds: [...composition.attachmentIds],
+        stickerId: composition.sticker?.id,
+        replyToId,
+      },
+      uploads: [...(composition.uploads ?? [])],
+      revision: 0,
+      local: {
+        chatId,
+        sender: this.sender()!,
+        createdAt: new Date().toISOString(),
+        messageType: composition.messageType,
+        mentions: composition.mentions,
+        replyToMessage: replyTo && {
+          ...replyTo,
+          forwardedFromName: replyTo.forwardedFrom?.sender.name,
+          mentions: replyTo.mentions ?? [],
+        },
+        sticker: composition.sticker,
+        attachments: [],
+      },
+    });
+  }
+
+  enqueueForward(
+    chatId: SnowflakeID,
+    threadId: SnowflakeID | undefined,
+    sources: readonly MessageResponse[],
+    options: {
+      comment?: string;
+      commentMentions?: MentionInfo[];
+    } = {},
+  ) {
+    const messages = [...sources].sort((a, b) => a.id - b.id);
+    const source = messages[0];
+    const single = messages.length === 1;
+    const clientGeneratedId = crypto.randomUUID();
+    return this.add(chatId, threadId, {
+      forwardComment: options.comment?.trim()
+        ? { text: options.comment.trim(), mentions: options.commentMentions }
+        : undefined,
+      forward: {
+        sourceChatId: source.chatId,
+        messageIds: messages.map((message) => message.id),
+        allowPlaceholders: false,
+        clientGeneratedId,
+        threadId,
+      },
+      body: {
+        clientGeneratedId,
+        messageType: single ? source.messageType : MessageType.forwarded,
+        message: single ? source.message : undefined,
+      },
+      uploads: [],
+      revision: 0,
+      local: {
+        chatId,
+        sender: this.sender()!,
+        createdAt: new Date().toISOString(),
+        messageType: single ? source.messageType : MessageType.forwarded,
+        attachments: single ? source.attachments : [],
+        sticker: single ? source.sticker : undefined,
+        mentions: single ? source.mentions : undefined,
+        forwardedFrom:
+          single && showsForwardOrigin(source)
+            ? (source.forwardedFrom ?? {
+                sender: source.sender,
+                originalChatId: source.chatId,
+                originalMessageId: source.id,
+                originalReplyTo: source.replyToMessage,
+              })
+            : undefined,
+        forwardedBundleId: single ? source.forwardedBundleId : undefined,
+        forwardedPreview: single ? source.forwardedPreview : forwardPreview(messages),
+      },
+    });
+  }
+
+  enqueueEdit(
+    original: MessageResponse,
+    threadId: SnowflakeID | undefined,
+    text: string,
+    composition: Composition,
+  ): OutgoingMessage {
+    const existing = this.pending().find((item) => this.matches(item, original));
+    if (existing) {
+      this.edit(existing, text, composition);
+      return existing;
+    }
+    composition = existingUploads(composition, original);
+    return this.add(
+      original.chatId,
+      threadId,
+      {
+        body: {
+          clientGeneratedId: original.clientGeneratedId,
+          messageType: MessageType.text,
+          message: text,
+          attachmentIds: [...composition.attachmentIds],
+        },
+        uploads: [...(composition.uploads ?? [])],
+        revision: 0,
+        local: {
+          ...original,
+          isEdited: true,
+          mentions: composition.mentions,
+          attachments: original.attachments.filter((attachment) => composition.attachmentIds.includes(attachment.id)),
+        },
+      },
+      original,
+    );
+  }
+
+  edit(item: OutgoingMessage, text: string, composition: Composition): OutgoingMessage {
+    if (item.cancelled() || (item.disposed && !item.confirmed())) {
+      const owned = this.tasks.get(item)!.owned;
+      for (const upload of composition.uploads ?? []) if (!owned.has(upload)) upload.dispose();
+      return item;
+    }
+    if (item.disposed) {
+      const original = item.confirmed();
+      if (original)
+        return this.enqueueEdit(original, item.threadId, text, existingUploads(composition, original, true));
+      return item;
+    }
+    composition = existingUploads(composition, item.confirmed());
+    const task = this.tasks.get(item)!;
+    const current = item.message();
+    const previous = task.intent();
+    const uploads = [...(composition.uploads ?? [])];
+    for (const upload of uploads) task.owned.add(upload);
+    task.intent.set({
+      body: { ...previous.body, message: text, attachmentIds: [...composition.attachmentIds] },
+      uploads,
+      revision: previous.revision + 1,
+      local: {
+        ...current,
+        isEdited: true,
+        mentions: composition.mentions,
+        attachments: (item.confirmed()?.attachments ?? current.attachments).filter(
+          (attachment) => attachment.id != null && composition.attachmentIds.includes(attachment.id),
+        ),
+      },
+    });
+    task.changed.next();
+    this.cleanUploads(item);
+    void this.retry(item);
+    return item;
+  }
+
+  async retryUpload(item: OutgoingMessage, upload: AttachmentUpload): Promise<void> {
+    if (item.disposed || item.cancelled() || !item.uploads.includes(upload)) return;
+    await upload.retry();
+    if (item.disposed || item.cancelled() || !item.uploads.includes(upload)) return;
+    if (item.uploads.every((attachment) => attachment.state().status !== UploadStatus.Failed)) await this.retry(item);
+  }
+
+  removeUpload(item: OutgoingMessage, upload: AttachmentUpload) {
+    if (
+      item.disposed ||
+      item.cancelled() ||
+      !item.uploads.includes(upload) ||
+      upload.state().status !== UploadStatus.Failed
+    )
+      return;
+    const task = this.tasks.get(item)!;
+    const intent = task.intent();
+    const uploads = intent.uploads.filter((attachment) => attachment !== upload);
+    let attachmentIds = intent.body.attachmentIds ?? [];
+    let text = intent.body.message ?? '';
+    let mentions = intent.local.mentions;
+    const original = item.confirmed();
+    if (!uploads.length && !attachmentIds.length && !text.trim()) {
+      // Removing the only new attachment leaves nothing to send; an edit keeps the confirmed message.
+      if (!original) {
+        void this.cancel(item);
+        return;
+      }
+      text = original.message ?? '';
+      attachmentIds = original.attachments.map((attachment) => attachment.id);
+      mentions = original.mentions;
+    }
+    if (
+      original &&
+      !task.inflight &&
+      (!task.patch || task.patch.revision <= task.acknowledged()) &&
+      !uploads.length &&
+      (original.message ?? '') === text &&
+      original.attachments.length === attachmentIds.length &&
+      original.attachments.every((attachment) => attachmentIds.includes(attachment.id))
+    ) {
+      // Only discard a no-op when no older request can still change the server copy.
+      this.remove(item);
+      return;
+    }
+    this.edit(item, text, {
+      messageType: intent.body.messageType,
+      attachmentIds,
+      uploads,
+      mentions,
+    });
+  }
+
+  /** Batch recall keeps the row and uploads until publication and a successful DELETE. */
+  waitForPublication(item: OutgoingMessage): Promise<MessageResponse> {
+    if (item.published()) return Promise.resolve(item.confirmed()!);
+    return this.request(
+      item,
+      this.connection.messages$.pipe(
+        filter((message) => this.matches(item, message)),
+        takeUntil(this.tasks.get(item)!.changed),
+      ),
+    );
+  }
+
+  cancel(item: OutgoingMessage): Promise<void> {
+    const task = this.tasks.get(item)!;
+    task.cancelled.set(true);
+    if (item.disposed) {
+      const original = item.confirmed();
+      if (!original) return Promise.resolve();
+      const existing = this.pending().find((candidate) => this.matches(candidate, original));
+      if (existing) return this.cancel(existing);
+      // A menu may outlive range handoff. Restore only its tombstone, never its create operation.
+      item.disposed = false;
+      this.pending.update((items) => [...items, item]);
+    }
+    task.retryable = true;
+    task.changed.next();
+    clearTimeout(task.timer);
+    this.cleanUploads(item);
+    // No POST has started: there can be no server copy or late acknowledgement.
+    if (!task.create && !item.editId) this.remove(item);
+    this.pump();
+    return this.delete(item);
+  }
+
+  private add(chatId: SnowflakeID, threadId: SnowflakeID | undefined, initial: Intent, original?: MessageResponse) {
+    const intent = signal(initial);
+    const acknowledged = signal(-1);
+    const confirmed = signal(original);
+    const published = signal(!!original);
+    const cancelled = signal(false);
+    const item: OutgoingMessage = {
+      clientGeneratedId: initial.body.clientGeneratedId,
+      chatId,
+      threadId,
+      editId: original?.id,
+      forwarding: !!initial.forward,
+      speakingRestriction: signal<SpeakingMode | undefined>(undefined),
+      get body() {
+        return intent().body;
+      },
+      get uploads() {
+        return intent().uploads;
+      },
+      message: computed(() => {
+        const latest = intent();
+        const response = confirmed();
+        // Audio's HTTP response only acknowledges transcoding; keep its blob until publication.
+        if (response && published() && acknowledged() === latest.revision) return response;
+        const ids = new Set(latest.local.attachments.map((attachment) => attachment.id));
+        return {
+          ...latest.local,
+          sender: this.sender() ?? latest.local.sender,
+          id: published() ? (response?.id ?? latest.local.id) : latest.local.id,
+          message: latest.body.message,
+          attachments: [
+            ...latest.local.attachments,
+            ...localAttachments(
+              latest.uploads.filter((upload) => upload.state().id == null || !ids.has(upload.state().id)),
+            ),
+          ],
+        };
+      }),
+      confirmed,
+      published,
+      cancelled: cancelled.asReadonly(),
+      delivery: signal(MessageDelivery.Sending),
+      disposed: false,
+    };
+    this.tasks.set(item, {
+      intent,
+      acknowledged,
+      cancelled,
+      owned: new Set(initial.uploads),
+      changed: new Subject(),
+      stopped: new Subject(),
+      retryable: true,
+      retryDelay: 1_000,
+    });
+    this.pending.update((items) => [...items, item]);
+    this.pump();
+    return item;
+  }
+
+  retry(item: OutgoingMessage): Promise<void> {
+    if (item.disposed) return Promise.resolve();
+    const task = this.tasks.get(item)!;
+    clearTimeout(task.timer);
+    task.retryable = true;
+    if (item.cancelled()) return this.delete(item);
+    if (item.operation) return item.operation;
+    item.speakingRestriction?.set(undefined);
+    if (this.needsSend(item)) item.delivery.set(MessageDelivery.Sending);
+    this.pump();
+    return item.operation ?? Promise.resolve();
+  }
+
+  private needsSend(item: OutgoingMessage) {
+    const task = this.tasks.get(item)!;
+    return !item.disposed && !item.cancelled() && task.acknowledged() < task.intent().revision;
+  }
+
+  private pump() {
+    const heads = new Map<string, OutgoingMessage>();
+    // An attachment may become ready before a younger text POST returns. That POST keeps its slot.
+    for (const item of this.pending()) {
+      if (
+        !item.disposed &&
+        !item.cancelled() &&
+        !item.editId &&
+        !item.confirmed() &&
+        item.delivery() !== MessageDelivery.Failed &&
+        this.tasks.get(item)!.inflight
+      ) {
+        heads.set(`${item.chatId}/${item.threadId ?? ''}`, item);
+      }
+    }
+    for (const item of this.pending()) {
+      if (item.disposed || item.cancelled() || item.delivery() === MessageDelivery.Failed) continue;
+      const task = this.tasks.get(item)!;
+      const intent = task.intent();
+      if (this.needsSend(item) && (item.confirmed() || !task.create) && task.ready?.revision !== intent.revision) {
+        if (intent.uploads.every((upload) => upload.state().status === UploadStatus.Ready)) {
+          task.ready = submission(
+            intent,
+            intent.uploads.map((upload) => upload.state().id!),
+          );
+        } else if (!item.operation && item.delivery() !== MessageDelivery.Failed) {
+          this.run(item, this.prepare(item));
+        }
+      }
+      if (!item.editId && !item.confirmed()) {
+        // Uploading/failed uploads do not reserve a slot. Once ready, re-enter this same queue.
+        if (!task.create && task.ready?.revision !== intent.revision) continue;
+        const key = `${item.chatId}/${item.threadId ?? ''}`;
+        const head = heads.get(key);
+        if (head && head !== item) continue;
+        heads.set(key, item);
+      }
+      if (!this.needsSend(item) || item.operation || item.delivery() === MessageDelivery.Failed) continue;
+      this.run(item, this.send(item));
+    }
+  }
+
+  private run(item: OutgoingMessage, operation: Promise<void>) {
+    item.operation = operation.finally(() => {
+      item.operation = undefined;
+      this.cleanUploads(item);
+      if (item.cancelled()) void this.delete(item);
+      this.pump();
+    });
+  }
+
+  private async prepare(item: OutgoingMessage) {
+    const task = this.tasks.get(item)!;
+    while (this.needsSend(item)) {
+      const intent = task.intent();
+      const ids = await firstValueFrom(
+        from(
+          Promise.all(
+            intent.uploads.map(async (upload) => {
+              const id = await upload.retry();
+              if (id == null) throw new Error('Attachment upload failed');
+              return id;
+            }),
+          ).catch(() => undefined),
+        ).pipe(takeUntil(merge(task.changed, task.stopped))),
+        { defaultValue: undefined },
+      );
+      if (!this.needsSend(item)) return;
+      if (intent !== task.intent()) continue;
+      if (!ids) {
+        task.retryable = intent.uploads.every((upload) => upload.retryable !== false);
+        item.delivery.set(MessageDelivery.Failed);
+        this.schedule(item);
+      } else {
+        task.ready = submission(intent, ids);
+      }
+      return;
+    }
+  }
+
+  private async send(item: OutgoingMessage) {
+    const task = this.tasks.get(item)!;
+    const submitted = (!item.confirmed() && task.create) || task.ready!;
+    try {
+      if (navigator.onLine === false) throw new RpcTransportError('disconnected');
+      const id = item.editId ?? item.confirmed()?.id;
+      task.inflight = submitted;
+      if (id == null) task.create = submitted;
+      else task.patch = submitted;
+      const response = await this.request(
+        item,
+        id != null
+          ? this.api.messages.edit({
+              chatId: item.chatId,
+              messageId: id,
+              message: submitted.body.message!,
+              attachmentIds: submitted.body.attachmentIds,
+            })
+          : submitted.forward
+            ? submitted.forward.messageIds.length === 1
+              ? this.api.messages.forwardOne({
+                  chatId: item.chatId,
+                  messageId: submitted.forward.messageIds[0],
+                  sourceChatId: submitted.forward.sourceChatId,
+                  allowPlaceholders: submitted.forward.allowPlaceholders,
+                  clientGeneratedId: submitted.forward.clientGeneratedId,
+                  threadId: submitted.forward.threadId,
+                })
+              : this.api.messages.forward({ chatId: item.chatId, ...submitted.forward })
+            : item.threadId != null
+              ? this.api.messages.sendInThread({ chatId: item.chatId, threadId: item.threadId, ...submitted.body })
+              : this.api.messages.send({ chatId: item.chatId, ...submitted.body }),
+      );
+      if (item.disposed) return;
+      if (id == null) {
+        this.created(item, response, !!submitted.forward || submitted.body.messageType !== MessageType.audio);
+        if (!item.cancelled() && item.published() && task.acknowledged() === submitted.revision) {
+          this.connection.accept(item.confirmed()!);
+        }
+      } else {
+        const accepted = this.acknowledge(item, response, submitted, true);
+        if (accepted && !item.cancelled()) {
+          this.connection.acceptChange({ type: ServerWsMessageType.messageUpdated, payload: item.confirmed()! });
+        }
+      }
+      if (!item.cancelled()) {
+        task.retryDelay = 1_000;
+        task.retryable = true;
+      }
+    } catch (error) {
+      if (!this.needsSend(item)) return;
+      // A realtime acknowledgement wins over a failed RPC response; pump submits any newer edit.
+      if (task.inflight && task.acknowledged() >= task.inflight.revision) return;
+      if (await this.confirmForwardFallback(item, submitted, error)) {
+        await this.send(item);
+        return;
+      }
+      if (!this.needsSend(item)) return;
+      item.delivery.set(MessageDelivery.Failed);
+      item.speakingRestriction?.set(error instanceof RpcError ? speakingErrorMode(error) : undefined);
+      task.retryable = task.retryable && retryable(error);
+      this.schedule(item);
+    } finally {
+      task.inflight = undefined;
+      this.cleanUploads(item);
+    }
+  }
+
+  /** The server checks current source state; replacements require explicit consent. */
+  private async confirmForwardFallback(item: OutgoingMessage, submitted: Submission, error: unknown): Promise<boolean> {
+    if (
+      !submitted.forward ||
+      submitted.forward.allowPlaceholders ||
+      !(error instanceof RpcError) ||
+      error.code !== RpcErrorCode.BadRequest
+    )
+      return false;
+    const replacementRequired =
+      error.message === 'Audio messages cannot be forwarded until transcoding finishes' ||
+      error.message === 'Forwarded messages cannot include nested forwarded messages';
+    if (!replacementRequired) return false;
+    const task = this.tasks.get(item)!;
+    const i18n = this.injector.get(TranslocoService);
+    const alert = await this.injector.get(AlertController).create({
+      header: i18n.translate('messages.forward.confirmTitle'),
+      // The server stops at the first invalid source, so consent covers both reasons.
+      message: i18n.translate('messages.forward.confirmBoth'),
+      buttons: [
+        { text: i18n.translate('common.cancel'), role: 'cancel' },
+        { text: i18n.translate('messages.forward.continue'), role: 'confirm' },
+      ],
+    });
+    if (!this.needsSend(item)) return false;
+    const dismissed = alert.onDidDismiss();
+    const stop = merge(task.changed, task.stopped).subscribe(() => {
+      if (!this.needsSend(item)) void alert.dismiss(undefined, 'cancel');
+    });
+    try {
+      await alert.present();
+      if (!this.needsSend(item)) await alert.dismiss(undefined, 'cancel');
+      const result = await dismissed;
+      if (result.role !== 'confirm' || !this.needsSend(item)) return false;
+      // Retry the same operation key; only explicit consent changes.
+      submitted.forward = { ...submitted.forward, allowPlaceholders: true };
+      task.intent.update((intent) => ({ ...intent, forward: submitted.forward }));
+      return true;
+    } finally {
+      stop.unsubscribe();
+    }
+  }
+
+  private created(item: OutgoingMessage, message: MessageResponse, published: boolean) {
+    const task = this.tasks.get(item)!;
+    if (item.disposed || !task.create) return;
+    this.acknowledge(item, message, task.create, published);
+    if (item.cancelled()) void this.delete(item);
+    const comment = task.intent().forwardComment;
+    if (comment && item.published() && !item.cancelled()) {
+      // Consume before enqueueing: HTTP and WS may both acknowledge this forward.
+      task.intent.update((intent) => ({ ...intent, forwardComment: undefined }));
+      this.enqueue(item.chatId, item.threadId, comment.text, {
+        messageType: MessageType.text,
+        attachmentIds: [],
+        mentions: comment.mentions,
+      });
+    }
+    this.pump();
+  }
+
+  private acknowledge(item: OutgoingMessage, message: MessageResponse, submission: Submission, published: boolean) {
+    const task = this.tasks.get(item)!;
+    if (submission.revision < task.acknowledged() || (submission.revision === task.acknowledged() && item.published()))
+      return false;
+    item.confirmed.set(item.cancelled() ? tombstone(message) : message);
+    task.acknowledged.set(submission.revision);
+    if (published) item.published.set(true);
+    if (!this.needsSend(item)) item.delivery.set(MessageDelivery.Sent);
+    else item.delivery.set(MessageDelivery.Sending);
+    if (!item.cancelled()) clearTimeout(task.timer);
+    return true;
+  }
+
+  private delete(item: OutgoingMessage): Promise<void> {
+    const task = this.tasks.get(item)!;
+    const message = item.confirmed();
+    if (task.deletion) return task.deletion;
+    if (item.disposed || !item.cancelled() || task.deleted || !task.retryable || !message || !item.published())
+      return Promise.resolve();
+    task.deletion = (async () => {
+      try {
+        await this.request(item, this.api.messages.delete({ chatId: item.chatId, messageId: message.id }));
+      } catch (error) {
+        if (item.disposed || task.deleted) return;
+        // Missing or already deleted is success; other application failures require intervention.
+        if (
+          !(error instanceof RpcError) ||
+          (error.code !== RpcErrorCode.NotFound && error.code !== RpcErrorCode.Gone)
+        ) {
+          task.retryable = retryable(error);
+          item.delivery.set(MessageDelivery.Failed);
+          this.schedule(item);
+          return;
+        }
+      }
+      if (item.disposed) return;
+      task.deleted = true;
+      item.delivery.set(MessageDelivery.Sent);
+      this.connection.acceptChange({
+        type: ServerWsMessageType.messageDeleted,
+        payload: {
+          ...message,
+          isDeleted: true,
+          message: undefined,
+          attachments: [],
+          hasAttachments: false,
+          sticker: undefined,
+          reactions: [],
+        },
+      });
+    })().finally(() => {
+      task.deletion = undefined;
+    });
+    return task.deletion;
+  }
+
+  private schedule(item: OutgoingMessage) {
+    const task = this.tasks.get(item)!;
+    clearTimeout(task.timer);
+    if (!task.retryable || item.disposed || navigator.onLine === false) return;
+    task.timer = setTimeout(() => void this.retry(item), task.reconnect ? 0 : task.retryDelay);
+    task.reconnect = false;
+    task.retryDelay = Math.min(task.retryDelay * 2, 30_000);
+  }
+
+  private async request<T>(item: OutgoingMessage, request: Observable<T>) {
+    try {
+      return await firstValueFrom(
+        request.pipe(
+          timeout(REQUEST_TIMEOUT),
+          takeUntil(merge(this.tasks.get(item)!.stopped, fromEvent(window, 'offline'))),
+          takeUntilDestroyed(this.destroyRef),
+        ),
+      );
+    } catch (error) {
+      if (navigator.onLine === false) throw new RpcTransportError('disconnected');
+      throw error;
+    }
+  }
+
+  private async checkPublished(item: OutgoingMessage, id: SnowflakeID) {
+    const task = this.tasks.get(item)!;
+    if (task.checking) return;
+    task.checking = true;
+    try {
+      const message = await this.request(item, this.api.messages.get({ chatId: item.chatId, messageId: id }));
+      if (item.disposed || item.published()) return;
+      this.created(item, message, true);
+      if (!item.cancelled()) this.connection.accept(message);
+    } catch {
+      // Audio returns 404 during transcoding; retain its ACK and local playback for the next resync.
+    } finally {
+      task.checking = false;
+    }
+  }
+
+  /** Normal range responses also discover IDs for cancelled creates whose ACK was lost. */
+  release(messages: readonly MessageResponse[]) {
+    for (const item of this.pending()) {
+      const message = messages.find((message) => this.matches(item, message));
+      if (!message) continue;
+      const task = this.tasks.get(item)!;
+      if (item.cancelled()) {
+        if (message.isDeleted) {
+          task.deleted = true;
+          this.cleanUploads(item);
+        } else {
+          this.created(item, message, true);
+          void this.delete(item);
+        }
+      } else if (item.published() && !this.needsSend(item) && matchesBody(message, item.confirmed()!)) {
+        this.remove(item);
+      }
+    }
+  }
+
+  private matches(item: OutgoingMessage, message: MessageResponse) {
+    return (
+      item.chatId === message.chatId &&
+      item.message().sender.uid === message.sender.uid &&
+      (item.clientGeneratedId === message.clientGeneratedId || (item.editId ?? item.confirmed()?.id) === message.id)
+    );
+  }
+
+  private cleanUploads(item: OutgoingMessage) {
+    const task = this.tasks.get(item)!;
+    const keep = new Set(
+      item.cancelled() || item.disposed
+        ? []
+        : [
+            ...item.uploads,
+            ...(task.inflight?.uploads ?? []),
+            ...(!item.confirmed() ? (task.create?.uploads ?? []) : []),
+          ],
+    );
+    for (const upload of task.owned) {
+      if (keep.has(upload)) continue;
+      upload.dispose();
+      task.owned.delete(upload);
+    }
+    if (item.cancelled() && !task.compacted) {
+      task.compacted = true;
+      const intent = task.intent();
+      const body = { clientGeneratedId: item.clientGeneratedId, messageType: intent.body.messageType };
+      task.intent.set({
+        body,
+        revision: intent.revision,
+        uploads: [],
+        local: {
+          chatId: intent.local.chatId,
+          sender: intent.local.sender,
+          createdAt: intent.local.createdAt,
+          messageType: body.messageType,
+          attachments: [],
+        },
+      });
+      task.ready = undefined;
+      if (task.create) task.create = { body, revision: task.create.revision, uploads: [] };
+      task.patch = undefined;
+      const confirmed = item.confirmed();
+      if (confirmed) item.confirmed.set(tombstone(confirmed));
+      // The request body contains attachment IDs; the active round no longer needs local files.
+      if (task.inflight) task.inflight.uploads = [];
+    }
+  }
+
+  private remove(item: OutgoingMessage) {
+    item.disposed = true;
+    const task = this.tasks.get(item)!;
+    clearTimeout(task.timer);
+    task.stopped.next();
+    this.cleanUploads(item);
+    this.pending.update((items) => items.filter((candidate) => candidate !== item));
+  }
+
+  private clear() {
+    for (const item of this.pending()) this.remove(item);
+  }
+}
+
+function matchesBody(
+  message: MessageResponse,
+  body: Pick<CreateMessageBody, 'message' | 'attachmentIds'> | MessageResponse,
+) {
+  const ids = 'attachments' in body ? body.attachments.map((attachment) => attachment.id) : (body.attachmentIds ?? []);
+  return (
+    message.message === body.message &&
+    message.attachments.length === ids.length &&
+    message.attachments.every((attachment) => ids.includes(attachment.id))
+  );
+}
+function retryable(error: unknown) {
+  return (
+    (error instanceof RpcTransportError &&
+      (error.kind === 'disconnected' || error.kind === 'timeout' || error.kind === 'overloaded')) ||
+    (error instanceof Error && error.name === 'TimeoutError') ||
+    (error instanceof RpcError &&
+      (error.code === RpcErrorCode.Unavailable ||
+        error.code === RpcErrorCode.Internal ||
+        error.code === RpcErrorCode.Overloaded))
+  );
+}
+function localAttachments(uploads: readonly AttachmentUpload[]) {
+  return uploads.map((upload) => {
+    const state = upload.state();
+    return {
+      url: upload.url,
+      fileName: upload.file.name,
+      kind: upload.file.type,
+      size: upload.file.size,
+      width: state.width,
+      height: state.height,
+    };
+  });
+}
+
+/** Borrowed uploads already owned by a server attachment no longer need a blob URL. */
+function existingUploads(composition: Composition, original?: MessageResponse, disposed = false): Composition {
+  const ids = new Set(composition.attachmentIds);
+  const uploads = (composition.uploads ?? []).filter((upload) => {
+    const id = upload.state().id;
+    if (id == null || (!disposed && !original?.attachments.some((attachment) => attachment.id === id))) return true;
+    ids.add(id);
+    return false;
+  });
+  return { ...composition, attachmentIds: [...ids], uploads };
+}
+
+function submission(intent: Intent, ids: SnowflakeID[]): Submission {
+  return {
+    forward: intent.forward,
+    revision: intent.revision,
+    uploads: intent.uploads,
+    body: { ...intent.body, attachmentIds: [...new Set([...(intent.body.attachmentIds ?? []), ...ids])] },
+  };
+}
+
+function tombstone(message: MessageResponse): MessageResponse {
+  return {
+    ...message,
+    message: undefined,
+    attachments: [],
+    hasAttachments: false,
+    mentions: undefined,
+    reactions: [],
+    replyToMessage: undefined,
+    forwardedFrom: undefined,
+    forwardedPreview: undefined,
+    forwardedBundleId: undefined,
+    sticker: undefined,
+  };
+}

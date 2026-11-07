@@ -1,0 +1,98 @@
+<ion-header>
+  <ion-toolbar>
+    <ion-buttons slot="start">
+      <ion-button (click)="panels.back()"><ion-icon slot="icon-only" [icon]="backIcon"></ion-icon></ion-button>
+    </ion-buttons>
+    <ion-title>{{ 'settings.menu.notifications' | transloco }}</ion-title>
+  </ion-toolbar>
+</ion-header>
+<ion-content appScrollbars color="light">
+  <ion-list [inset]="true">
+    <ion-item>
+      <ion-toggle
+        [checked]="notifications.enabled() && notifications.permission() === 'granted'"
+        [disabled]="!notifications.supported || notifications.busy() || notifications.permission() !== 'granted'"
+        (ionChange)="setNotifications($event)">
+        {{ 'notificationPreferences.thisDevice' | transloco }}
+      </ion-toggle>
+      @if (notifications.busy()) {
+        <ion-spinner slot="end" />
+      }
+    </ion-item>
+    @if (!notifications.supported) {
+      <ion-item lines="none">
+        <ion-note>{{ 'settings.menu.notificationsUnsupported' | transloco }}</ion-note>
+      </ion-item>
+    } @else if (notifications.permission() === 'denied') {
+      <ion-item lines="none">
+        <ion-note class="ion-text-wrap">
+          {{ (isDesktopShell ? 'settings.menu.notificationBlockedHelpDesktop' : 'settings.menu.notificationBlockedHelp')
+          | transloco }}
+        </ion-note>
+      </ion-item>
+    } @else if (notifications.permission() === 'default') {
+      <ion-item lines="none">
+        <ion-button fill="clear" [disabled]="notifications.busy()" (click)="notifications.setEnabled(true)">
+          <ion-icon slot="start" [icon]="notificationIcon"></ion-icon>
+          {{ 'settings.menu.requestNotifications' | transloco }}
+        </ion-button>
+      </ion-item>
+    } @else {
+      <ion-item lines="none">
+        <ion-button fill="clear" [disabled]="testing()" (click)="sendTest()">
+          <ion-icon slot="start" [icon]="notificationIcon"></ion-icon>
+          {{ 'settings.menu.testNotification' | transloco }}
+        </ion-button>
+        @if (testing()) {
+          <ion-spinner slot="end" />
+        }
+      </ion-item>
+    }
+    @let error = notifications.error();
+    @if (error && error !== PushError.PermissionDenied && !notifications.busy()) {
+      <ion-item lines="none">
+        <ion-note class="ion-text-wrap" color="danger">
+          @switch (error) {
+            @case (PushError.SubscribeFailed) {
+              {{ 'settings.menu.pushRegisterFailed' | transloco }}
+            }
+            @case (PushError.BackendSubscribeFailed) {
+              {{ 'settings.menu.pushRegisterFailed' | transloco }}
+            }
+            @case (PushError.ServiceWorkerUnavailable) {
+              {{ 'settings.menu.notificationWorkerUnavailable' | transloco }}
+            }
+            @case (PushError.UnsubscribeFailed) {
+              {{ 'settings.menu.notificationDisableFailed' | transloco }}
+            }
+            @default {
+              {{ 'settings.menu.tryAgain' | transloco }}
+            }
+          }
+        </ion-note>
+        <ion-button slot="end" fill="clear" [disabled]="notifications.busy()" (click)="retry()">
+          <ion-icon slot="start" [icon]="updateIcon"></ion-icon>
+          {{ 'common.retry' | transloco }}
+        </ion-button>
+      </ion-item>
+    }
+  </ion-list>
+  @if (store.defaultsError()) {
+    <ion-list [inset]="true">
+      <ion-item>
+        <ion-note color="danger">{{ 'notificationPreferences.loadFailed' | transloco }}</ion-note>
+        <ion-button slot="end" fill="clear" (click)="store.refreshNotificationDefaults()">
+          {{ 'common.retry' | transloco }}
+        </ion-button>
+      </ion-item>
+    </ion-list>
+  }
+  <ion-list [inset]="true">
+    <ion-list-header>
+      <ion-label color="primary">{{ 'notificationPreferences.chatNotifications' | transloco }}</ion-label>
+    </ion-list-header>
+    <app-notification-category [kind]="Kind.dm" [compact]="true" />
+    <app-notification-category [kind]="Kind.group" [compact]="true" />
+  </ion-list>
+</ion-content>
+<ion-toast [message]="'settings.menu.notificationDenied' | transloco" [duration]="2500" />

@@ -1,0 +1,20 @@
+@if (!wide()) {
+  <app-chat-list [selection]="selection()" [active]="listActive()" (openList)="openList($event)"></app-chat-list>
+}
+<div class="ion-page ion-hide-md-down">
+  <ion-header>
+    <ion-toolbar>
+      <ion-title>{{ 'app.name' | transloco }}</ion-title>
+    </ion-toolbar>
+    <app-voice-bar />
+  </ion-header>
+  <ion-content appScrollbars>
+    <div class="empty-state ion-padding ion-text-center">
+      <ion-icon [icon]="chatIcon"></ion-icon>
+      <h1>{{ 'chats.list.startChat' | transloco }}</h1>
+      <p>{{ 'chats.list.selectConversation' | transloco }}</p>
+    </div>
+  </ion-content>
+</div>
+<!-- Let Ionic retain the child route when Back returns to this cached list page. -->
+<router-outlet />

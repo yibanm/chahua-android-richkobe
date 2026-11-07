@@ -1,0 +1,114 @@
+<ion-header>
+  <ion-toolbar>
+    <ion-buttons slot="start">
+      <ion-button (click)="panels.back()">
+        <ion-icon slot="icon-only" [icon]="backIcon"></ion-icon>
+      </ion-button>
+    </ion-buttons>
+    <ion-title>{{ 'settings.general.title' | transloco }}</ion-title>
+  </ion-toolbar>
+</ion-header>
+<ion-content appScrollbars color="light">
+  <ion-list [inset]="true">
+    <ion-item [button]="true" [detail]="true" routerLink="/settings/stickers" lines="none">
+      <ion-icon slot="start" [icon]="stickerIcon" color="primary"></ion-icon>
+      <ion-label>{{ 'settings.menu.stickers' | transloco }}</ion-label>
+    </ion-item>
+  </ion-list>
+  <ion-list [inset]="true">
+    <ion-list-header>{{ 'settings.general.colorMode' | transloco }}</ion-list-header>
+    <ion-radio-group [value]="preferences.colorMode()" (ionChange)="setColorMode($event.detail.value)">
+      <ion-item>
+        <ion-icon slot="start" [icon]="systemIcon" color="primary"></ion-icon>
+        <ion-radio [value]="ColorMode.System">{{ 'settings.general.colorModeSystem' | transloco }}</ion-radio>
+      </ion-item>
+      <ion-item>
+        <ion-icon slot="start" [icon]="lightIcon" color="primary"></ion-icon>
+        <ion-radio [value]="ColorMode.Light">{{ 'settings.general.colorModeLight' | transloco }}</ion-radio>
+      </ion-item>
+      <ion-item lines="none">
+        <ion-icon slot="start" [icon]="darkIcon" color="primary"></ion-icon>
+        <ion-radio [value]="ColorMode.Dark">{{ 'settings.general.colorModeDark' | transloco }}</ion-radio>
+      </ion-item>
+    </ion-radio-group>
+  </ion-list>
+  <ion-list [inset]="true">
+    <ion-item>
+      <ion-icon slot="start" [icon]="threadsIcon" color="primary"></ion-icon>
+      <ion-toggle
+        [checked]="preferences.showThreadsInMessages()"
+        (ionChange)="preferences.setShowThreadsInMessages($event.detail.checked)">
+        <span class="ion-text-wrap">{{ 'settings.general.showThreads' | transloco }}</span>
+      </ion-toggle>
+    </ion-item>
+    <ion-item>
+      <ion-icon slot="start" [icon]="avatarsIcon" color="primary"></ion-icon>
+      <ion-toggle
+        [checked]="preferences.showAllAvatars()"
+        (ionChange)="preferences.setShowAllAvatars($event.detail.checked)">
+        <span class="ion-text-wrap">{{ 'settings.general.showAllAvatars' | transloco }}</span>
+      </ion-toggle>
+    </ion-item>
+    <ion-item>
+      <ion-icon slot="start" [icon]="dmDetailsIcon" color="primary"></ion-icon>
+      <ion-toggle
+        [checked]="preferences.showDmDetails()"
+        (ionChange)="preferences.setShowDmDetails($event.detail.checked)">
+        <span class="ion-text-wrap">{{ 'settings.general.showDmDetails' | transloco }}</span>
+      </ion-toggle>
+    </ion-item>
+    <ion-item>
+      <ion-icon slot="start" [icon]="antiRecallIcon" color="primary"></ion-icon>
+      <ion-toggle
+        [checked]="preferences.antiRecallEnabled()"
+        (ionChange)="preferences.setAntiRecall($event.detail.checked)">
+        <span class="ion-text-wrap">{{ 'settings.general.antiRecall' | transloco }}</span>
+      </ion-toggle>
+    </ion-item>
+    <ion-item lines="none">
+      <ion-icon slot="start" [icon]="membershipIcon" color="primary" />
+      <ion-toggle
+        [checked]="preferences.showMembershipMessages()"
+        [disabled]="saving() || !session.user()"
+        (ionChange)="saveMembershipMessages($event)">
+        <span class="ion-text-wrap">{{ 'settings.general.showMembershipMessages' | transloco }}</span>
+      </ion-toggle>
+      @if (saving()) {
+        <ion-spinner slot="end" />
+      }
+    </ion-item>
+    @if (saveError()) {
+      <ion-item lines="none">
+        <ion-label class="ion-text-wrap" color="danger">{{ 'settings.general.saveFailed' | transloco }}</ion-label>
+      </ion-item>
+    }
+  </ion-list>
+  <ion-list [inset]="true">
+    <ion-list-header>
+      <ion-label>{{ 'settings.general.fontSize' | transloco }}</ion-label>
+      <ion-note class="font-value">
+        {{ fontSizes[preferences.chatFontSize()] || ('settings.general.fontDefault' | transloco) }}
+      </ion-note>
+    </ion-list-header>
+    <ion-item lines="none">
+      <ion-range
+        [min]="FontSize.Small"
+        [max]="FontSize.Large"
+        [step]="1"
+        [snaps]="true"
+        [ticks]="true"
+        [value]="preferences.chatFontSize()"
+        (ionInput)="setFontSize($event.detail.value)">
+        <ion-label slot="start">{{ 'settings.general.fontSmall' | transloco }}</ion-label>
+        <ion-label slot="end">{{ 'settings.general.fontLarge' | transloco }}</ion-label>
+      </ion-range>
+    </ion-item>
+    <div
+      class="font-preview ion-padding"
+      [style.--preview-font-size]="fontSizes[preferences.chatFontSize()]"
+      [style.--preview-line-height]="fontSizes[preferences.chatFontSize()] ? '1.4' : null">
+      <p class="preview-message">{{ 'settings.general.fontPreviewIncoming' | transloco }}</p>
+      <p class="preview-message own">{{ 'settings.general.fontPreviewOutgoing' | transloco }}</p>
+    </div>
+  </ion-list>
+</ion-content>

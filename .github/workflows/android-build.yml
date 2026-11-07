@@ -1,0 +1,134 @@
+name: Android Build
+
+# 安卓仓库独立构建（用户 2026-11-07 裁定：安卓与桌面分仓库发布）。
+# 推 dev/main 分支构建产物为 workflow artifact；推 v* 标签创建 Release。
+# 只出 arm64-v8a 与 armeabi-v7a 两个 ABI（tauri CLI --target aarch64 armv7，
+# 产物为含双 ABI 的 universal APK）。
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, dev]
+    tags: ['v*']
+    paths:
+      - 'pwa/**'
+      - 'CHANGELOG.md'
+      - 'version.json'
+      - '.github/workflows/android-build.yml'
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+env:
+  NODE_VERSION: '24.22.0'
+
+jobs:
+  build:
+    name: Build Android APK
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: pwa
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Setup Android SDK + NDK
+        uses: android-actions/setup-android@v3
+        with:
+          # compileSdk 由生成工程决定（当前 36，稳定通道）；37 是预览通道装不到
+          packages: 'platform-tools platforms;android-36 build-tools;36.0.0 ndk;27.0.12077973'
+
+      - name: Cache npm
+        uses: actions/cache@v6
+        with:
+          path: ~/.npm
+          key: android-npm-${{ hashFiles('pwa/package-lock.json') }}
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Build APKs (arm64-v8a + armeabi-v7a)
+        env:
+          TAURI_ANDROID_NDK_VERSION: '27.0.12077973'
+        run: npx tauri android build --apk --target aarch64 --target armv7
+
+      - name: Collect artifacts
+        shell: bash
+        run: |
+          mkdir -p ../dist-release
+          v=$(node -e 'console.log(require("./src-tauri/tauri.conf.json").version)')
+          # universal APK 内恰含 lib/arm64-v8a 与 lib/armeabi-v7a 两个 .so（CLI 只编这两个 target）
+          apk=$(find src-tauri/gen/android/app/build/outputs/apk -name 'app-universal-release*.apk' | head -1)
+          [ -n "$apk" ] || { echo "::error::未找到 universal apk"; find src-tauri/gen/android/app/build/outputs -name '*.apk'; exit 1; }
+          cp "$apk" "../dist-release/chahua-tauri-${v}-android-universal.apk"
+          ls -la ../dist-release
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: artifacts-android
+          path: dist-release/
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    name: Create GitHub Release
+    needs: [build]
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v7
+        with:
+          pattern: artifacts-*
+          path: dist-release
+          merge-multiple: true
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          ver="${tag#v}"
+          manifest_ver=$(node -e 'console.log(require("./version.json").version)')
+          if [ "$manifest_ver" != "$ver" ]; then
+            echo "::error::version.json ($manifest_ver) 与 tag ($ver) 不一致，拒绝发布"
+            exit 1
+          fi
+          awk -v ver="$ver" '
+            BEGIN { p = 0 }
+            $0 ~ "^## v" ver "([[:space:]]|$)" { p = 1; next }
+            p && /^## / { exit }
+            p { print }
+          ' CHANGELOG.md > notes.md
+          if [ ! -s notes.md ]; then
+            echo "茶话科比版 v${ver}：与桌面端同源的安卓移植版。" > notes.md
+          fi
+          gh release create "$tag" dist-release/* \
+            --title "茶话科比版 v${ver}" \
+            --notes-file notes.md
+          echo "Release: https://github.com/${{ github.repository }}/releases/tag/${tag}" >> "$GITHUB_STEP_SUMMARY"

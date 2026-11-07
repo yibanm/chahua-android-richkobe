@@ -1,0 +1,244 @@
+:host {
+  display: block;
+  min-width: 0;
+  margin-bottom: 4px;
+}
+
+:host(.album) {
+  max-width: 100%;
+  // The inline intrinsic width sizes the bubble; flex sizing follows its available space.
+  flex: 1 1 auto;
+}
+
+// A single image or video also stretches; the bubble is sized by the host's inline width.
+:host(.fill) {
+  flex: 1 1 auto;
+}
+
+.attachments {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+  max-width: 100%;
+
+  &.album {
+    position: relative;
+    display: block;
+    overflow: hidden;
+
+    .media-frame {
+      position: absolute;
+    }
+  }
+}
+
+.album-more {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  background: rgba(var(--ion-color-dark-rgb), 0.6);
+  color: var(--ion-color-dark-contrast);
+  font-size: 28px;
+
+  &.with-failures {
+    inset: 0 0 auto auto;
+    z-index: 3;
+    width: auto;
+    padding: 6px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 18px;
+  }
+}
+
+.upload-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+.upload-tile {
+  position: relative;
+  aspect-ratio: 1;
+  overflow: hidden;
+  background: var(--ion-color-light);
+  img,
+  video {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+}
+
+.media-frame.cover img,
+.media-frame.cover video {
+  object-fit: cover;
+}
+
+// Stretched single media keeps the image's aspect ratio against the bubble width, capped at the
+// media height limit. Images fill the remaining space with a blurred backdrop.
+// width stays definite (100%) so the max-height clamp transfers to height only, not back to width.
+.media-frame.fill {
+  --media-max-height: 420px;
+  width: 100%;
+  max-height: var(--media-max-height);
+}
+
+.backdrop {
+  position: absolute;
+  inset: -20px;
+  background-position: center;
+  background-size: cover;
+  filter: blur(20px);
+  opacity: 0.8;
+  pointer-events: none;
+}
+
+.media-frame,
+.audio-frame,
+.file-frame {
+  position: relative;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+// Each frame reserves its size up front, so the placeholder fills it without moving the row.
+.media-skeleton {
+  position: absolute;
+  inset: 0;
+}
+
+.media-frame:has(.loaded) .media-skeleton {
+  display: none;
+}
+
+// An opaque neutral background keeps transparent media independent of the bubble color.
+.media-frame,
+.attachments.album {
+  background: var(--ion-color-medium);
+}
+
+.sticker {
+  background: transparent;
+}
+
+:host(.overlay-time) {
+  margin-bottom: 0;
+}
+
+.media-time {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  font-size: var(--app-font-micro);
+  line-height: var(--app-line-micro);
+  font-weight: 400;
+  pointer-events: none;
+}
+
+.sticker .media-time {
+  right: 4px;
+  bottom: 4px;
+}
+
+.media-frame img,
+.media-frame video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+// The frame keeps the image ratio until its height is capped. Size the image element to
+// the contained image itself so its opaque backing never covers the blurred side gutters.
+.media-frame.fill img {
+  width: min(100%, calc(var(--media-max-height) * var(--media-aspect-ratio)), var(--media-natural-width, 100%));
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--ion-color-medium);
+}
+
+.audio-frame {
+  display: flex;
+  align-items: center;
+  width: 300px;
+  height: 50px;
+}
+.audio-frame app-voice-player {
+  width: 100%;
+}
+// The clock text sits on the player's own time line, clear of the bottom-aligned bars.
+.audio-frame .media-time {
+  bottom: 2px;
+  color: color-mix(in srgb, currentColor 70%, transparent);
+}
+
+.media-error {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 8px;
+  text-align: center;
+  color: inherit;
+}
+
+.file {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 280px;
+  max-width: 100%;
+  height: 56px;
+  color: inherit;
+  text-decoration: none;
+
+  ion-icon {
+    flex-shrink: 0;
+    font-size: 24px;
+  }
+}
+
+.file-info {
+  flex: 1;
+  min-width: 0;
+
+  small {
+    font-size: var(--app-font-caption);
+    line-height: var(--app-line-caption);
+    opacity: 0.7;
+  }
+}
+
+.file-name {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.upload-overlay {
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgba(var(--ion-background-color-rgb), 0.45);
+  color: var(--ion-text-color);
+}
+
+.video-open {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  width: 100%;
+  background: transparent;
+  color: white;
+  font-size: 48px;
+  filter: drop-shadow(0 1px 3px rgb(0 0 0 / 45%));
+}

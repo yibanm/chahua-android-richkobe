@@ -1,0 +1,135 @@
+<ion-item-sliding
+  [disabled]="actionsAlwaysVisible() || pendingAction() || (!startActions().length && !endActions().length)">
+  @if (!actionsAlwaysVisible() && startActions().length) {
+    <ion-item-options side="start">
+      <ng-container [ngTemplateOutlet]="swipeOptions" [ngTemplateOutletContext]="{ $implicit: 'start' }"></ng-container>
+    </ion-item-options>
+  }
+  <ion-item
+    [button]="button()"
+    [routerLink]="entry().link"
+    [state]="entry().state"
+    routerLinkActive
+    [routerLinkActiveOptions]="{ paths: 'exact', queryParams: 'ignored', fragment: 'ignored', matrixParams: 'ignored' }"
+    #active="routerLinkActive"
+    [color]="active.isActive ? 'primary' : undefined"
+    [detail]="false"
+    (click)="(button() || active.isActive) && selected.emit()">
+    @if (actionsAlwaysVisible() && startActions().length) {
+      <ion-buttons slot="start">
+        <ng-container
+          [ngTemplateOutlet]="inlineButtons"
+          [ngTemplateOutletContext]="{ $implicit: 'start' }"></ng-container>
+      </ion-buttons>
+    }
+    <app-chat-avatar slot="start" [entry]="entry()" [online]="online()" />
+    <ion-label class="ion-text-nowrap">
+      <h3>
+        {{ entry().title }}
+        <ng-content select="[slot=title]"></ng-content>
+        @if (entry().muted) {
+          <ion-icon class="muted-icon" [icon]="mutedIcon" [color]="active.isActive ? undefined : 'medium'" />
+        }
+      </h3>
+      <p>
+        @if (entry().sender; as sender) {
+          <ion-text [color]="active.isActive ? undefined : 'dark'">{{ sender }}:</ion-text>
+          {{ ' ' }}
+        }
+        {{ entry().subtitle }}
+        <ng-content select="[slot=preview]"></ng-content>
+      </p>
+    </ion-label>
+    @if (
+      !actionsAlwaysVisible() &&
+      (entry().delivery != null ||
+        entry().time ||
+        entry().unreadCount ||
+        entry().unreadMentions ||
+        entry().unreadReactions)
+    ) {
+      <div slot="end" class="meta">
+        @if (entry().delivery != null || entry().time) {
+          <div class="timestamp">
+            @if (entry().delivery != null) {
+              <app-message-status [delivery]="entry().delivery" [read]="entry().read ?? false" />
+            }
+            @if (entry().time) {
+              <span>{{ entry().time | chatDate }}</span>
+            }
+          </div>
+        }
+        <div class="badges">
+          @if (entry().unreadMentions) {
+            <ion-badge class="mention-badge" [color]="entry().muted ? 'medium' : active.isActive ? 'light' : 'primary'">
+              @
+            </ion-badge>
+          }
+          @if (entry().unreadReactions) {
+            <ion-badge
+              class="reaction-badge"
+              [color]="active.isActive ? 'light' : entry().muted ? 'medium' : 'primary'">
+              <ion-icon [icon]="reactionIcon"></ion-icon>
+            </ion-badge>
+          }
+          @if (entry().unreadCount; as count) {
+            <ion-badge
+              [color]="entry().unreadColor ?? (active.isActive ? 'light' : entry().muted ? 'medium' : 'primary')">
+              {{ count >= 1000 ? '999+' : count }}
+            </ion-badge>
+          }
+        </div>
+      </div>
+    }
+    @if (actionsAlwaysVisible() && endActions().length) {
+      <ion-buttons slot="end">
+        <ng-container
+          [ngTemplateOutlet]="inlineButtons"
+          [ngTemplateOutletContext]="{ $implicit: 'end' }"></ng-container>
+      </ion-buttons>
+    }
+    @if (pendingAction() && !actionsAlwaysVisible()) {
+      <ion-spinner slot="end"></ion-spinner>
+    }
+    <ng-content select="[slot=end]"></ng-content>
+  </ion-item>
+  @if (!actionsAlwaysVisible() && endActions().length) {
+    <ion-item-options side="end">
+      <ng-container [ngTemplateOutlet]="swipeOptions" [ngTemplateOutletContext]="{ $implicit: 'end' }"></ng-container>
+    </ion-item-options>
+  }
+</ion-item-sliding>
+@if (error()) {
+  <ion-item lines="none">
+    <ion-label color="danger">{{ 'chats.listItem.actionFailed' | transloco }}</ion-label>
+  </ion-item>
+}
+
+<ng-template #swipeOptions let-side>
+  @for (action of side === 'start' ? startActions() : endActions(); track action.label) {
+    <ion-item-option
+      [color]="action.color ?? 'primary'"
+      [disabled]="!!pendingAction()"
+      (click)="perform(action, $event)">
+      <ion-icon slot="top" [icon]="action.icon"></ion-icon>
+      {{ action.label }}
+    </ion-item-option>
+  }
+</ng-template>
+<ng-template #inlineButtons let-side>
+  @for (action of side === 'start' ? startActions() : endActions(); track action.label) {
+    <ion-button
+      size="small"
+      [color]="action.color ?? 'primary'"
+      [disabled]="!!pendingAction()"
+      [title]="action.label"
+      (click)="perform(action, $event)">
+      <span class="action-content icon-content" [class.busy]="pendingAction()?.label === action.label">
+        <ion-icon class="action-label" [icon]="action.icon"></ion-icon>
+        @if (pendingAction()?.label === action.label) {
+          <ion-spinner></ion-spinner>
+        }
+      </span>
+    </ion-button>
+  }
+</ng-template>

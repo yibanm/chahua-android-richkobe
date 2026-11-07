@@ -1,0 +1,48 @@
+<ion-header>
+  <ion-toolbar>
+    <ion-buttons slot="start">
+      <ion-button (click)="panels.back()">
+        <ion-icon slot="icon-only" [icon]="backIcon"></ion-icon>
+      </ion-button>
+    </ion-buttons>
+    <ion-title>{{ 'settings.readReceipt.title' | transloco }}</ion-title>
+  </ion-toolbar>
+</ion-header>
+<ion-content appScrollbars color="light">
+  <ion-list [inset]="true">
+    @if (loading()) {
+      <ion-item lines="none"><ion-spinner slot="start"></ion-spinner></ion-item>
+    } @else if (loadError()) {
+      <app-load-error
+        compact
+        [message]="'settings.readReceipt.loadFailed' | transloco"
+        (retry)="loadReadReceiptSettings()" />
+    } @else {
+      <ion-item lines="none">
+        <ion-toggle
+          [checked]="visibility() === Visibility.friends"
+          [disabled]="saving()"
+          (ionChange)="setEnabled($event.detail.checked)">
+          {{ 'settings.readReceipt.title' | transloco }}
+        </ion-toggle>
+        @if (saving()) {
+          <ion-spinner slot="end" />
+        }
+      </ion-item>
+      <ion-item lines="none">
+        <ion-note class="ion-text-wrap">{{ 'settings.readReceipt.reciprocalNote' | transloco }}</ion-note>
+      </ion-item>
+      @if (saveError()) {
+        <ion-item lines="none">
+          <ion-label class="ion-text-wrap" color="danger">
+            {{ 'settings.readReceipt.saveFailed' | transloco }}
+          </ion-label>
+          <ion-button slot="end" fill="clear" (click)="saveReadReceiptSettings()">
+            {{ 'common.retry' | transloco }}
+          </ion-button>
+        </ion-item>
+      }
+    }
+  </ion-list>
+  <app-privacy-exceptions [kind]="ExceptionKind.readReceipts" />
+</ion-content>

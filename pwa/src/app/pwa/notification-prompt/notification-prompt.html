@@ -1,0 +1,24 @@
+<ion-alert
+  cssClass="notification-prompt"
+  [class.requesting]="requesting()"
+  [isOpen]="open()"
+  [backdropDismiss]="false"
+  [header]="'pwa.notificationPrompt.title' | transloco"
+  [message]="'pwa.notificationPrompt.message' | transloco"
+  [buttons]="[
+    {
+      text: ('pwa.notificationPrompt.decline' | transloco),
+      handler: decline,
+      htmlAttributes: { disabled: requesting() },
+    },
+    {
+      text: ('pwa.notificationPrompt.allow' | transloco),
+      cssClass: 'notification-allow',
+      handler: allow,
+      htmlAttributes: { disabled: requesting() },
+    },
+  ]"
+  (didPresent)="attachSpinner($event)"
+  (didDismiss)="open.set(false)" />
+<ng-template #spinner><ion-spinner /></ng-template>
+<ion-toast [message]="'pwa.notificationPrompt.failed' | transloco" [duration]="2500" />

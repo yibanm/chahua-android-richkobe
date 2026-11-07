@@ -1,0 +1,254 @@
+<ion-content appScrollbars>
+  <ion-refresher
+    slot="fixed"
+    [disabled]="!active() || chatQuery().loadingMore() || threads().loadingMore()"
+    (ionRefresh)="refreshing.set(true); refresh()">
+    <ion-refresher-content></ion-refresher-content>
+  </ion-refresher>
+  <ion-list>
+    @if (!list().archived && !list().requestHistory) {
+      <app-chat-list-item
+        [button]="true"
+        (selected)="openList.emit({ tab: list().tab, archived: true, requestHistory: false })"
+        [entry]="{
+          title: ('chats.list.archived' | transloco),
+          subtitle: ('chats.content.archivedSubtitle' | transloco),
+          icon: archiveIcon,
+          unreadCount: archivedUnreadCount(),
+          unreadColor: 'medium',
+        }"></app-chat-list-item>
+      @if (showHistoryEntry()) {
+        <app-chat-list-item
+          [button]="true"
+          (selected)="openList.emit({ tab: ListTab.Friends, archived: false, requestHistory: true })"
+          [entry]="{
+            title: ('chats.list.friendRequests' | transloco),
+            subtitle: ('chats.content.requestHistorySubtitle' | transloco),
+            icon: requestsIcon,
+          }"></app-chat-list-item>
+      }
+    }
+    @if (!refreshing() && (!ready() || (loading() && !rows().length))) {
+      @for (row of [0, 1, 2, 3, 4, 5, 6, 7]; track row) {
+        <div class="chat-skeleton-row" [class.short-title]="row % 3 === 1" [class.short-preview]="row % 3 === 2">
+          <span class="skeleton-block chat-skeleton-avatar"></span>
+          <span class="chat-skeleton-lines">
+            <span class="skeleton-block chat-skeleton-title"></span>
+            <span class="skeleton-block chat-skeleton-preview"></span>
+          </span>
+          <span class="chat-skeleton-meta">
+            <span class="skeleton-block chat-skeleton-time"></span>
+            @if (row % 2 === 0) {
+              <span class="skeleton-block chat-skeleton-badge"></span>
+            }
+          </span>
+        </div>
+      }
+    }
+    @if (ready()) {
+      @if (showRequests() && requestRows().length) {
+        @for (row of requestRows(); track row.request.id) {
+          @let name = row.peer.username ?? ('chats.content.userWithUid' | transloco: { uid: row.peer.uid });
+          <app-chat-list-item
+            [entry]="{
+              title: name,
+              subtitle: row.request.question
+                ? ('chats.content.requestQuestion'
+                  | transloco
+                    : {
+                        question: row.request.question,
+                        answer: row.request.message ?? '',
+                      })
+                : row.request.message ||
+                  (row.incoming
+                    ? ('chats.content.friendRequest' | transloco)
+                    : ('chats.content.friendRequestSent' | transloco)),
+              avatar: row.peer.avatarUrl,
+            }"
+            [endActions]="
+              row.canDecide
+                ? [
+                    { label: ('chats.content.acceptRequest' | transloco: { name }), icon: acceptIcon, run: row.accept },
+                    {
+                      label: ('chats.content.rejectRequest' | transloco: { name }),
+                      icon: rejectIcon,
+                      color: 'danger',
+                      run: row.reject,
+                    },
+                    ...(row.request.status === FriendRequestStatus.pending
+                      ? [
+                          {
+                            label: ('chats.content.archiveRequest' | transloco: { name }),
+                            icon: archiveIcon,
+                            run: row.archive,
+                          },
+                        ]
+                      : []),
+                  ]
+                : []
+            "
+            [actionsAlwaysVisible]="true">
+            @if (!row.canDecide) {
+              <ion-note slot="end" class="ion-text-nowrap">
+                @switch (row.request.status) {
+                  @case (FriendRequestStatus.accepted) {
+                    {{ 'chats.content.requestAccepted' | transloco }}
+                  }
+                  @case (FriendRequestStatus.rejected) {
+                    {{ 'chats.content.requestRejected' | transloco }}
+                  }
+                  @default {
+                    {{ 'chats.content.requestPending' | transloco }}
+                  }
+                }
+              </ion-note>
+            }
+          </app-chat-list-item>
+        }
+      }
+      @if (!list().requestHistory && (rows().length || !loading())) {
+        @for (row of rows(); track row.key) {
+          @switch (row.kind) {
+            @case (ListRowKind.Thread) {
+              <app-chat-list-item
+                [attr.data-row-key]="row.key"
+                [entry]="row.entry"
+                [startActions]="
+                  row.thread.unreadCount > 0
+                    ? [{ label: ('chats.content.markRead' | transloco), icon: readIcon, run: row.markRead }]
+                    : []
+                "
+                [endActions]="[
+                  {
+                    label: (row.thread.archived ? 'chats.content.unarchive' : 'chats.content.archive') | transloco,
+                    icon: archiveIcon,
+                    run: row.toggleArchived,
+                  },
+                ]"
+                (selected)="
+                  navigation.goTo(row.thread.chatId, { type: latestTarget }, row.thread.threadRootMessage.id)
+                ">
+                <app-message-preview slot="title" [message]="row.thread.threadRootMessage"></app-message-preview>
+                <span slot="preview">
+                  @if (row.draft || row.forward?.length) {
+                    <ion-text color="danger">{{ 'chats.content.draft' | transloco }}</ion-text>
+                    @if (row.forward?.length) {
+                      {{ 'messages.forward.pendingCount' | transloco: { count: row.forward!.length } }}
+                    } @else if (row.draft && row.draft.text.trim()) {
+                      <app-markdown-summary [text]="row.draft!.text" />
+                    }
+                  } @else if (row.preview; as last) {
+                    <app-message-preview [message]="last"></app-message-preview>
+                  } @else {
+                    {{ 'chats.content.noReplies' | transloco }}
+                  }
+                </span>
+              </app-chat-list-item>
+            }
+            @case (ListRowKind.Chat) {
+              <app-chat-list-item
+                #presenceRow
+                [attr.data-presence-uid]="row.isDm ? row.chat.peer?.uid : null"
+                [online]="active() && row.isDm && presence.user(row.chat.peer?.uid)?.online === true"
+                [attr.data-row-key]="row.key"
+                [entry]="{
+                  ...row.entry,
+                  title: row.isDm
+                    ? (row.chat.peer?.username ?? ('chats.content.dm' | transloco))
+                    : (row.chat.name ?? ('chats.content.unnamedGroup' | transloco)),
+                }"
+                [startActions]="
+                  row.toggleRead
+                    ? [
+                        {
+                          label:
+                            (row.chat.unreadCount > 0 ? 'chats.content.markRead' : 'chats.content.markUnread')
+                            | transloco,
+                          icon: row.chat.unreadCount > 0 ? readIcon : unreadIcon,
+                          run: row.toggleRead,
+                        },
+                      ]
+                    : []
+                "
+                [endActions]="[
+                  ...(row.chat.archived
+                    ? []
+                    : [
+                        {
+                          label: 'notificationPreferences.chatSettings' | transloco,
+                          icon: row.muted ? unmutedIcon : mutedIcon,
+                          color: 'medium',
+                          run: row.toggleMuted,
+                        },
+                      ]),
+                  {
+                    label: (row.chat.archived ? 'chats.content.unarchive' : 'chats.content.archive') | transloco,
+                    icon: archiveIcon,
+                    run: row.toggleArchived,
+                  },
+                ]"
+                (selected)="navigation.goTo(row.chat.id, { type: latestTarget })">
+                <span slot="preview">
+                  @if (row.draft || row.forward?.length) {
+                    <ion-text color="danger">{{ 'chats.content.draft' | transloco }}</ion-text>
+                    @if (row.forward?.length) {
+                      {{ 'messages.forward.pendingCount' | transloco: { count: row.forward!.length } }}
+                    } @else if (row.draft && row.draft.text.trim()) {
+                      <app-markdown-summary [text]="row.draft!.text" />
+                    }
+                  } @else if (row.preview; as last) {
+                    <app-message-preview [message]="last"></app-message-preview>
+                  } @else {
+                    {{ 'chats.content.noMessages' | transloco }}
+                  }
+                </span>
+              </app-chat-list-item>
+            }
+          }
+        } @empty {
+          @if (
+            !loading() &&
+            !(showChats() && chatQuery().error()) &&
+            !(showThreads() && threads().error()) &&
+            (!showRequests() || !friendRequests().items().length)
+          ) {
+            <ion-item lines="none">
+              <ion-label>
+                {{
+                  (list().tab === ListTab.Threads ? 'chats.content.emptyThreads' : 'chats.content.emptyChats')
+                    | transloco
+                }}
+              </ion-label>
+            </ion-item>
+          }
+        }
+        @if (showThreads() && threads().error()) {
+          <app-load-error compact [message]="'chats.content.threadsLoadFailed' | transloco" (retry)="refresh()" />
+        }
+        @if (showChats()) {
+          @if (chatQuery().error(); as error) {
+            <app-load-error
+              compact
+              [message]="
+                error === ChatListError.Load
+                  ? ('chats.content.chatsLoadFailed' | transloco)
+                  : error === ChatListError.Unread
+                    ? ('chats.content.unreadLoadFailed' | transloco)
+                    : error === ChatListError.Recent
+                      ? ('chats.content.recentLoadFailed' | transloco)
+                      : ('chats.content.moreLoadFailed' | transloco)
+              "
+              (retry)="refresh()" />
+          }
+        }
+      }
+    }
+  </ion-list>
+  <ion-infinite-scroll
+    threshold="100px"
+    [disabled]="!active() || loading() || !ready() || !hasMore()"
+    (ionInfinite)="loadMore($event)">
+    <ion-infinite-scroll-content></ion-infinite-scroll-content>
+  </ion-infinite-scroll>
+</ion-content>
+<app-chat-mute />

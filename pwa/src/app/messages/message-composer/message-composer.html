@@ -1,0 +1,187 @@
+@if (suggestions().length && !restriction()) {
+  <ion-list appScrollbars class="mentions">
+    @for (member of suggestions(); track member.uid; let i = $index) {
+      <ion-item
+        [button]="true"
+        [detail]="false"
+        lines="none"
+        [class.selected]="i === selectedSuggestion()"
+        (click)="mention(member)">
+        <app-chat-avatar
+          slot="start"
+          aria-hidden="true"
+          [size]="28"
+          [entry]="{ avatar: member.avatarUrl, title: member.username || member.uid.toString() }" />
+        <ion-label class="ion-text-nowrap">{{ member.username || member.uid }}</ion-label>
+      </ion-item>
+    }
+  </ion-list>
+}
+<ng-template #attachmentPreview let-kind let-url="url">
+  @if (kind.startsWith('image/')) {
+    <img [src]="url" />
+  } @else if (kind.startsWith('video/')) {
+    <video [src]="url" muted playsinline preload="metadata"></video>
+    <ion-icon class="video-icon" [icon]="icons.videocamOutline" />
+  } @else if (kind.startsWith('audio/')) {
+    <app-voice-player class="compact" [src]="url" />
+  } @else {
+    <ion-icon class="file-icon" [icon]="icons.documentOutline" />
+  }
+</ng-template>
+@if (!forwarding() && (existing().length || visualUploads().length)) {
+  <div appScrollbars class="uploads">
+    @for (item of existing(); track item.id) {
+      <div class="upload">
+        <ng-container
+          [ngTemplateOutlet]="attachmentPreview"
+          [ngTemplateOutletContext]="{ $implicit: item.kind, url: item.url }" />
+        <button type="button" class="upload-remove" (click)="removeExisting(item.id)">
+          <ion-icon [icon]="icons.closeOutline" />
+        </button>
+      </div>
+    }
+    @for (upload of visualUploads(); track upload) {
+      @let state = upload.state();
+      <div class="upload">
+        <ng-container
+          [ngTemplateOutlet]="attachmentPreview"
+          [ngTemplateOutletContext]="{ $implicit: upload.file.type, url: upload.url }" />
+        @if (state.status === Status.Processing || state.status === Status.Uploading) {
+          <div class="upload-status">
+            <app-upload-progress [value]="state.progress" />
+          </div>
+        }
+        @if (state.error) {
+          <app-upload-failure [upload]="upload" (retry)="upload.retry()" (remove)="remove(upload)" />
+        }
+        <button type="button" class="upload-remove" (click)="remove(upload)">
+          <ion-icon [icon]="icons.closeOutline" />
+        </button>
+      </div>
+    }
+  </div>
+}
+@if (!forwarding() && tooMany()) {
+  <p class="ion-padding-horizontal">{{ 'messages.composer.tooManyAttachments' | transloco }}</p>
+}
+@if (!forwarding() && unsupported()) {
+  <p class="ion-padding-horizontal">{{ 'messages.composer.editMediaOnly' | transloco }}</p>
+}
+<input
+  #photos
+  type="file"
+  accept="image/*,video/*,.heic,.heif"
+  multiple
+  hidden
+  (change)="files($event, Purpose.media)" />
+<input #filesInput type="file" multiple hidden (change)="files($event, Purpose.file)" />
+<div class="bar">
+  @if (voiceActive() && restriction(); as mode) {
+    <p class="ion-padding-horizontal">{{ 'speaking.blocked.' + mode | transloco }}</p>
+  }
+  <div class="compose-context" [hidden]="voiceActive() && !forwarding()"><ng-content /></div>
+  <div class="compose-row">
+    <button
+      type="button"
+      #attachButton
+      class="attach-button"
+      [disabled]="voiceActive() || forwarding() || !!restriction()"
+      (pointerdown)="$event.preventDefault()"
+      (click)="openAttachments(attachmentMenu, attachButton)">
+      <ion-icon [icon]="icons.attachOutline" />
+    </button>
+    <div class="input-wrapper" [hidden]="voiceActive()">
+      <div class="input-row">
+        <ion-textarea
+          appScrollbars
+          [disabled]="!!restriction()"
+          [placeholder]="
+            (restriction() ? 'speaking.blocked.' + restriction() : 'messages.composer.placeholder') | transloco
+          "
+          [autoGrow]="true"
+          [rows]="1"
+          [value]="restriction() ? '' : display().text"
+          (ionInput)="changed($event.detail.value || '', $event.detail.event)"
+          (ionFocus)="!dockStickers() && closeStickers()"
+          (paste)="paste($event)"
+          (keydown)="key($event)" />
+        @if (!editing() && !forwarding()) {
+          <button
+            type="button"
+            class="sticker-button"
+            [disabled]="!!restriction()"
+            [attr.title]="windows ? 'Emoji: Win + .' : macOS ? 'Emoji: fn + E' : null"
+            [class.selected]="panel() === Panel.Stickers"
+            (click)="togglePanel(Panel.Stickers)">
+            <ion-icon [icon]="icons.happyOutline" />
+          </button>
+        }
+      </div>
+    </div>
+    @if (useVoice()) {
+      <app-voice-recorder
+        [disabled]="!!restriction()"
+        [(active)]="voiceActive"
+        (activeChange)="$event && panel.set(Panel.None)"
+        (submitted)="sendVoice($event)"
+        (discarded)="discardVoice()" />
+    } @else {
+      <div class="action-slot">
+        <button
+          type="button"
+          class="send-button"
+          [disabled]="!canSend()"
+          (mousedown)="$event.preventDefault()"
+          (click)="submit()">
+          <ion-icon [icon]="icons.send" />
+        </button>
+      </div>
+    }
+  </div>
+</div>
+@if (stickersVisible()) {
+  <div class="sticker-panel" [class.docked]="dockStickers()">
+    @if (dockStickers()) {
+      <ion-toolbar>
+        <ion-title>{{ 'stickers.title' | transloco }}</ion-title>
+        <ion-buttons slot="end">
+          <ion-button (click)="closeStickers()">
+            <ion-icon slot="icon-only" [icon]="icons.closeOutline" />
+          </ion-button>
+        </ion-buttons>
+      </ion-toolbar>
+    }
+    <app-sticker-picker [embedded]="true" [grouped]="dockStickers()" (selected)="sticker($event)" />
+  </div>
+}
+
+<div #attachmentMenu popover="auto" class="attachment-menu" (pointerdown)="$event.preventDefault()">
+  <ion-list class="actions-menu" lines="none">
+    <ion-item [button]="true" [detail]="false" (click)="pickAttachment(attachmentMenu, photos)">
+      <ion-icon slot="start" [icon]="icons.imageOutline" />
+      <ion-label>{{ 'messages.composer.media' | transloco }}</ion-label>
+    </ion-item>
+    <ion-item
+      [button]="true"
+      [detail]="false"
+      [disabled]="!!editing()"
+      (click)="pickAttachment(attachmentMenu, filesInput)">
+      <ion-icon slot="start" [icon]="icons.documentOutline" />
+      <ion-label>{{ 'messages.composer.files' | transloco }}</ion-label>
+    </ion-item>
+  </ion-list>
+</div>
+
+<ion-alert
+  [isOpen]="blocked()"
+  [header]="'messages.composer.blockedTitle' | transloco"
+  [message]="
+    relationship()?.blocking
+      ? ('messages.composer.blockedSelf' | transloco)
+      : relationship()?.blockedBy
+        ? ('messages.composer.blockedBy' | transloco)
+        : ('messages.composer.notFriends' | transloco)
+  "
+  [buttons]="['common.ok' | transloco]"
+  (didDismiss)="blocked.set(false)" />

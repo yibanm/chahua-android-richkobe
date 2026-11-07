@@ -1,0 +1,87 @@
+@if (message().isDeleted) {
+  <ng-container>{{ 'messages.preview.deleted' | transloco }}</ng-container>
+} @else if (message().messageType === MessageType.placeholder) {
+  {{ placeholderLabel(message().message) | transloco }}
+} @else if (message().messageType === MessageType.forwarded) {
+  {{ 'messages.preview.forwarded' | transloco }}
+} @else if (message().messageType === MessageType.system) {
+  @if (message().sender; as sender) {
+    @let name = sender.name ?? ('chats.content.userWithUid' | transloco: { uid: sender.uid });
+    @if (interactive()) {
+      <a [routerLink]="['/profile', sender.uid]" (click)="$event.stopPropagation()">{{ name }}</a>
+    } @else {
+      <ng-container>{{ name }}</ng-container>
+    }
+  } @else {
+    <ng-container>{{ 'messages.preview.someone' | transloco }}</ng-container>
+  }
+  @if (systemMessage(); as system) {
+    <ng-container>{{ ' ' }}</ng-container>
+    <!-- Split the translated sentence before inserting names, so names stay literal and word order stays localizable. -->
+    @let parts =
+      ('messages.preview.system.' + system.kind | transloco: { target: '\uFFFC', message: '\uFFFC' }).split('\uFFFC');
+    @for (part of parts; track $index) {
+      @if ($index > 0) {
+        @if (system.target != null) {
+          @if (interactive() && message().systemLinks?.uid != null) {
+            <a
+              [routerLink]="['/profile', message().systemLinks!.uid]"
+              (click)="$event.stopPropagation()"
+              [textContent]="system.target"></a>
+          } @else {
+            <ng-container>{{ system.target }}</ng-container>
+          }
+        } @else {
+          @if (interactive() && message().systemLinks?.messageId != null && messageRoute()) {
+            <a
+              [routerLink]="messageRoute()"
+              (click)="$event.stopPropagation()"
+              [textContent]="'messages.preview.system.message' | transloco"></a>
+          } @else {
+            <ng-container>{{ 'messages.preview.system.message' | transloco }}</ng-container>
+          }
+        }
+      }
+      <ng-container>{{ part }}</ng-container>
+    }
+  } @else {
+    {{ message().message }}
+  }
+} @else if (message().messageType === MessageType.invite) {
+  <ng-container>{{ 'messages.preview.invite' | transloco }}</ng-container>
+} @else {
+  @for (kind of media(); track kind) {
+    @switch (kind) {
+      @case (MediaKind.Image) {
+        <ng-container>{{ 'messages.preview.image' | transloco }}</ng-container>
+      }
+      @case (MediaKind.Video) {
+        <ng-container>{{ 'messages.preview.video' | transloco }}</ng-container>
+      }
+      @case (MediaKind.Audio) {
+        <ng-container>{{ 'messages.preview.audio' | transloco }}</ng-container>
+      }
+      @case (MediaKind.File) {
+        <ng-container>{{ 'messages.preview.file' | transloco }}</ng-container>
+      }
+    }
+  }
+  @if (message().message?.trim()) {
+    <app-markdown-summary [text]="message().message!" [mentions]="message().mentions ?? []" />
+  } @else if (!media().length) {
+    @switch (message().messageType) {
+      @case (MessageType.sticker) {
+        <ng-container>{{ 'messages.preview.sticker' | transloco }}</ng-container>
+      }
+      @case (MessageType.audio) {
+        <ng-container>{{ 'messages.preview.audio' | transloco }}</ng-container>
+      }
+      @case (MessageType.file) {
+        <ng-container>{{ 'messages.preview.file' | transloco }}</ng-container>
+      }
+      @default {
+        <ng-container>{{ 'messages.preview.other' | transloco }}</ng-container>
+      }
+    }
+  }
+}

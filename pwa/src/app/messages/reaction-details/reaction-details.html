@@ -1,0 +1,42 @@
+<ion-header>
+  <ion-toolbar>
+    <ion-title>{{ 'reactions.title' | transloco }}</ion-title>
+    <ion-buttons slot="end">
+      <ion-button (click)="panels.close()">{{ 'common.done' | transloco }}</ion-button>
+    </ion-buttons>
+  </ion-toolbar>
+  <ion-segment
+    appScrollbars
+    [scrollable]="true"
+    [value]="emoji()"
+    (ionChange)="emoji.set($event.detail.value?.toString() ?? '')">
+    <ion-segment-button value="">
+      <ion-label>{{ 'reactions.all' | transloco: { count: count() } }}</ion-label>
+    </ion-segment-button>
+    @for (group of groups(); track group.emoji) {
+      <ion-segment-button [value]="group.emoji">
+        <ion-label>{{ group.emoji }} {{ group.reactors.length }}</ion-label>
+      </ion-segment-button>
+    }
+  </ion-segment>
+</ion-header>
+<ion-content appScrollbars>
+  @if (loading()) {
+    <div class="page-loading"><ion-spinner /></div>
+  } @else if (error()) {
+    <app-load-error [message]="'common.loadFailed' | transloco" (retry)="load()" />
+  } @else {
+    <ion-list>
+      @for (row of visible(); track row.user.uid) {
+        <ion-item>
+          <app-chat-avatar
+            slot="start"
+            [size]="40"
+            [entry]="{ avatar: row.user.avatarUrl, title: row.user.name ?? row.user.uid.toString() }" />
+          <ion-label>{{ row.user.name || row.user.uid }}</ion-label>
+          <span slot="end">{{ row.emojis.join(' ') }}</span>
+        </ion-item>
+      }
+    </ion-list>
+  }
+</ion-content>

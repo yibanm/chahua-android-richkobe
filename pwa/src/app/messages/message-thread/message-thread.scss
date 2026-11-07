@@ -1,0 +1,33 @@
+:host {
+  display: block;
+  margin: 8px calc(-1 * var(--message-padding-inline)) calc(-1 * var(--message-padding-block));
+  border-top: 1px solid color-mix(in srgb, currentColor 16%, transparent);
+}
+.thread-entry {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: var(--app-item-height);
+  padding: 8px var(--message-padding-inline);
+  background: transparent;
+  color: light-dark(
+    var(--thread-color, var(--ion-color-primary-shade)),
+    var(--thread-color, var(--ion-color-primary-tint))
+  );
+  text-align: start;
+  font-size: var(--app-font-compact);
+  line-height: var(--app-line-compact);
+  cursor: pointer;
+}
+.label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 1;
+  white-space: nowrap;
+}
+ion-icon {
+  flex-shrink: 0;
+  font-size: 18px;
+}

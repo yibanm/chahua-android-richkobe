@@ -1,0 +1,152 @@
+<ion-app>
+  @if (landingPage() && session.token()) {
+    <ion-router-outlet [swipeGesture]="false" />
+  } @else if (session.user()) {
+    <ion-split-pane when="md" contentId="main" (ionSplitPaneVisible)="splitPaneVisible.set($event.detail.visible)">
+      <ion-menu contentId="main" [swipeGesture]="false">
+        @if (splitPaneVisible()) {
+          <app-chat-list
+            [sidebar]="true"
+            [selection]="sidebarSelection()"
+            (openList)="sidebarSelection.set($event)"></app-chat-list>
+        }
+      </ion-menu>
+      <!-- Browser history owns the edge swipe; a second gesture would overlap Safari's transition. -->
+      <ion-router-outlet
+        #outlet
+        id="main"
+        [animated]="!splitPaneVisible()"
+        [swipeGesture]="false"
+        (stackWillChange)="prepareTransition(outlet)"></ion-router-outlet>
+    </ion-split-pane>
+    <app-chat-link [source]="outlet.isActivated ? outlet.component : null" />
+    <app-notification-prompt />
+  } @else {
+    <ion-content appScrollbars>
+      <section class="entry-status ion-text-center ion-padding">
+        <div class="entry-status-content">
+          <img class="entry-brand" ngSrc="icon/pwa-192x192.png" width="72" height="72" priority />
+          <div class="entry-indicator">
+            @if (loading()) {
+              <ion-spinner />
+            }
+          </div>
+          <h1>{{ 'app.entry.' + entryState() + '.title' | transloco }}</h1>
+          <p class="entry-description">{{ 'app.entry.' + entryState() + '.description' | transloco }}</p>
+          <div class="entry-actions">
+            @if (!loading() && !needsLogin()) {
+              <ion-button (click)="initialize()">{{ 'common.retry' | transloco }}</ion-button>
+            } @else if (entryState() === EntryState.Slow) {
+              <ion-button (click)="updates.reload()">{{ 'app.entry.reload' | transloco }}</ion-button>
+            }
+          </div>
+          @if (showDesktopLogin && needsLogin() && !loading()) {
+            <div class="entry-paste">
+              <!-- 测试包构建标识：确认用户跑的哪个包，排查时第一证据 -->
+              <p class="entry-build-tag">{{ buildTag }}</p>
+              @if (showOneClick) {
+                <ion-button class="entry-paste-button entry-paste-button--primary" expand="block" [disabled]="pwaScanning()" (click)="oneClickLogin()">
+                  @if (pwaScanning()) {
+                    <ion-spinner slot="start" />
+                  }
+                  {{ pwaScanning() ? ('app.entry.scanning' | transloco) : ('app.entry.oneClick' | transloco) }}
+                </ion-button>
+              }
+              <ion-button class="entry-paste-button" expand="block" fill="outline" [disabled]="pwaScanning()" (click)="manualLogin()">
+                {{ 'app.entry.manualLogin' | transloco }}
+              </ion-button>
+              @if (showPasswordLogin) {
+                <ion-button class="entry-paste-button" expand="block" fill="outline" [disabled]="pwaScanning()" (click)="passwordLogin()">
+                  {{ 'app.entry.passwordLogin' | transloco }}
+                </ion-button>
+              }
+              @if (pwaJwtFound()) {
+                <p class="entry-paste-hint entry-paste-hint--ok">{{ 'app.entry.pwaFound' | transloco }}</p>
+              }
+              @if (loginProgress() > 0) {
+                <div class="entry-progress">
+                  <ion-progress-bar [value]="loginProgress()" />
+                  <span class="entry-progress-pct">{{ (loginProgress() * 100) | number: '1.0-0' }}%</span>
+                </div>
+              }
+              @if (pwaJwtMissing()) {
+                <p class="entry-paste-hint">{{ 'app.entry.pwaMissing' | transloco }}</p>
+                @if (pwaScanError()) {
+                  <p class="entry-paste-error">{{ pwaScanError() }}</p>
+                }
+              }
+              @if (showPasteBox()) {
+                <p class="entry-paste-hint">{{ 'app.entry.pasteHint' | transloco }}</p>
+                <ion-input
+                  #tokenInput
+                  class="entry-paste-input"
+                  fill="outline"
+                  [value]="entryLink()"
+                  (ionInput)="entryLink.set($any($event.target).value ?? ''); entryLinkInvalid.set(false)"
+                  (keyup.enter)="submitEntryLink()"
+                  [placeholder]="'app.entry.pastePlaceholder' | transloco"
+                  [clearOnEdit]="false"
+                  type="text" />
+                @if (entryLinkInvalid()) {
+                  <p class="entry-paste-error">{{ 'app.entry.pasteInvalid' | transloco }}</p>
+                }
+                <ion-button class="entry-paste-button" expand="block" (click)="submitEntryLink()">
+                  {{ 'app.entry.pasteSubmit' | transloco }}
+                </ion-button>
+              }
+              @if (showPasswordBox()) {
+                <p class="entry-paste-hint">{{ 'app.entry.passwordHint' | transloco }}</p>
+                <ion-input
+                  #passwordInput
+                  class="entry-paste-input"
+                  fill="outline"
+                  [value]="passwordUsername()"
+                  (ionInput)="passwordUsername.set($any($event.target).value ?? ''); passwordError.set('')"
+                  [placeholder]="'app.entry.passwordUsername' | transloco"
+                  [clearOnEdit]="false"
+                  autocomplete="username"
+                  type="text" />
+                <ion-input
+                  class="entry-paste-input entry-paste-input--second"
+                  fill="outline"
+                  [value]="passwordValue()"
+                  (ionInput)="passwordValue.set($any($event.target).value ?? ''); passwordError.set('')"
+                  (keyup.enter)="submitPasswordLogin()"
+                  [placeholder]="'app.entry.passwordField' | transloco"
+                  [clearOnEdit]="false"
+                  autocomplete="current-password"
+                  type="password" />
+                @if (passwordError()) {
+                  <p class="entry-paste-error">
+                    {{
+                      (passwordError() === 'credentials'
+                        ? 'app.entry.passwordWrong'
+                        : passwordError() === 'empty'
+                          ? 'app.entry.passwordEmpty'
+                          : 'app.entry.passwordFailed') | transloco
+                    }}
+                  </p>
+                }
+                <ion-button
+                  class="entry-paste-button entry-paste-button--primary"
+                  expand="block"
+                  [disabled]="passwordBusy()"
+                  (click)="submitPasswordLogin()">
+                  @if (passwordBusy()) {
+                    <ion-spinner slot="start" />
+                  }
+                  {{ 'app.entry.passwordSubmit' | transloco }}
+                </ion-button>
+              }
+            </div>
+          }
+        </div>
+      </section>
+    </ion-content>
+  }
+  <ion-toast
+    [isOpen]="updates.promptOpen()"
+    [message]="updateReady()"
+    [buttons]="updateButtons()"
+    (didDismiss)="updates.dismiss()" />
+</ion-app>

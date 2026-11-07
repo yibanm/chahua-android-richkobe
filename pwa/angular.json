@@ -1,0 +1,138 @@
+{
+  "$schema": "./node_modules/@angular/cli/lib/config/schema.json",
+  "version": 1,
+  "newProjectRoot": "projects",
+  "projects": {
+    "app": {
+      "projectType": "application",
+      "schematics": {
+        "@schematics/angular:component": {
+          "style": "scss"
+        }
+      },
+      "root": "",
+      "sourceRoot": "src",
+      "prefix": "app",
+      "architect": {
+        "build": {
+          "builder": "@angular/build:application",
+          "options": {
+            "browser": "src/main.ts",
+            "define": {
+              "CHAHUA_API_BASE": "'/_api'"
+            },
+            "tsConfig": "tsconfig.app.json",
+            "inlineStyleLanguage": "scss",
+            "assets": [
+              {
+                "glob": "**/*",
+                "input": "public"
+              },
+              {
+                "glob": "*.json",
+                "input": "src/i18n",
+                "output": "i18n"
+              }
+            ],
+            "styles": [
+              "src/styles.scss"
+            ]
+          },
+          "configurations": {
+            "production": {
+              "budgets": [
+                {
+                  "type": "initial",
+                  "maximumWarning": "2mb",
+                  "maximumError": "5mb"
+                },
+                {
+                  "type": "anyComponentStyle",
+                  "maximumWarning": "4kb",
+                  "maximumError": "10kb"
+                }
+              ],
+              "outputHashing": "all",
+              "serviceWorker": "ngsw-config.json"
+            },
+            "prod": {
+              "outputPath": "dist/prod",
+              "deployUrl": "https://chahui.app/",
+              "crossOrigin": "anonymous",
+              "define": {
+                "CHAHUA_API_BASE": "'https://chahui.app/_api'"
+              }
+            },
+            "tauri": {
+              "outputPath": "dist/tauri",
+              "browser": "src/main.tauri.ts",
+              "optimization": true,
+              "outputHashing": "all",
+              "extractLicenses": true,
+              "sourceMap": false,
+              "define": {
+                "CHAHUA_API_BASE": "'https://chahui.app/_api'",
+                "CHAHUA_DEV_BACKEND": "false",
+                "CHAHUA_APP_VERSION": "'chahua-desktop-richkobe'"
+              }
+            },
+            "development": {
+              "optimization": false,
+              "extractLicenses": false,
+              "sourceMap": true
+            },
+            "ci": {
+              "progress": false
+            }
+          },
+          "defaultConfiguration": "production"
+        },
+        "serve": {
+          "builder": "@angular/build:dev-server",
+          "options": {
+            "proxyConfig": "proxy.conf.dev.mjs",
+            "host": "127.0.0.1"
+          },
+          "configurations": {
+            "production": {
+              "buildTarget": "app:build:production"
+            },
+            "development": {
+              "buildTarget": "app:build:development"
+            }
+          },
+          "defaultConfiguration": "development"
+        },
+        "extract-i18n": {
+          "builder": "@angular/build:extract-i18n",
+          "options": {
+            "buildTarget": "app:build"
+          }
+        },
+        "test": {
+          "builder": "@angular/build:unit-test",
+          "options": {
+            "providersFile": "src/test-providers.ts"
+          },
+          "configurations": {
+            "ci": {
+              "watch": false,
+              "reporters": [
+                "default",
+                [
+                  "junit",
+                  {
+                    "outputFile": "test_output/unit.xml"
+                  }
+                ]
+              ]
+            }
+          }
+        }
+      }
+    }
+  },
+  "cli": {
+    "analytics": false
+  }
+}

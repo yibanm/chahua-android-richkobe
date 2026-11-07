@@ -1,0 +1,39 @@
+<ion-header>
+  <ion-toolbar>
+    <ion-title>{{ 'chats.search.title' | transloco }}</ion-title>
+    <ion-buttons slot="end">
+      <ion-button (click)="panels.close()">{{ 'common.close' | transloco }}</ion-button>
+    </ion-buttons>
+  </ion-toolbar>
+</ion-header>
+<ion-content appScrollbars>
+  <ion-searchbar
+    [placeholder]="'chats.search.placeholder' | transloco"
+    [debounce]="300"
+    (ionInput)="query.set($event.detail.value || '')" />
+  <ion-segment
+    [value]="sort()"
+    (ionChange)="sort.set($event.detail.value === Sort.newest ? Sort.newest : Sort.relevance)">
+    <ion-segment-button [value]="Sort.relevance">
+      <ion-label>{{ 'chats.search.relevance' | transloco }}</ion-label>
+    </ion-segment-button>
+    <ion-segment-button [value]="Sort.newest">
+      <ion-label>{{ 'chats.search.newest' | transloco }}</ion-label>
+    </ion-segment-button>
+  </ion-segment>
+  @for (message of messages(); track message.id) {
+    <div (click)="locate(message)"><app-message [message]="message" [own]="false" [interactive]="false" inert /></div>
+  }
+  @if (cursor() != null && !error()) {
+    <ion-infinite-scroll threshold="100px" (ionInfinite)="more($event)">
+      <ion-infinite-scroll-content />
+    </ion-infinite-scroll>
+  }
+  @if (loading() && cursor() == null) {
+    <div class="page-loading"><ion-spinner /></div>
+  } @else if (error()) {
+    <app-load-error [message]="'chats.search.failed' | transloco" (retry)="load()" />
+  } @else if (query().trim() && !messages().length) {
+    <p class="ion-padding ion-text-center">{{ 'chats.search.noResults' | transloco }}</p>
+  }
+</ion-content>

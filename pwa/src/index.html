@@ -1,0 +1,381 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <title>茶话</title>
+
+    <base href="/" />
+
+    <script id="startup-updates">
+      (() => {
+        if (!('serviceWorker' in navigator)) return;
+        const requestTimeout = 15000;
+        const updateCheckTimeout = 60000;
+        const updateCheckInterval = 60000;
+        let interactive = false;
+        let checking = false;
+        let registration;
+        let sequence = 0;
+        let reloading = false;
+        let associated = !!navigator.serviceWorker.controller;
+        const updates = (window.chahuaUpdates = {
+          latestVersion: undefined,
+          setInteractive(value) {
+            interactive = value;
+            applyUpdate();
+          },
+        });
+
+        function applyUpdate() {
+          if (interactive || !updates.latestVersion || reloading) return;
+          // A faulty release must not cause an automatic reload loop.
+          const key = 'chahua.update.reloaded';
+          try {
+            if (sessionStorage.getItem(key) === updates.latestVersion) return;
+            sessionStorage.setItem(key, updates.latestVersion);
+          } catch {}
+          reloading = true;
+          location.reload();
+        }
+
+        navigator.serviceWorker.addEventListener('message', ({ data }) => {
+          if (data?.type !== 'VERSION_READY') return;
+          updates.latestVersion = data.latestVersion.hash;
+          applyUpdate();
+        });
+
+        async function withTimeout(promise, milliseconds = requestTimeout) {
+          let timer;
+          try {
+            return await Promise.race([
+              promise,
+              new Promise((_, reject) => {
+                timer = setTimeout(() => reject(new Error('Update check timed out')), milliseconds);
+              }),
+            ]);
+          } finally {
+            clearTimeout(timer);
+          }
+        }
+
+        async function waitForWorkerEvent(type, matches, start = () => {}, milliseconds = requestTimeout) {
+          let listener;
+          try {
+            await withTimeout(
+              new Promise((resolve) => {
+                listener = (event) => {
+                  if (matches(event)) resolve();
+                };
+                navigator.serviceWorker.addEventListener(type, listener);
+                start();
+              }),
+              milliseconds,
+            );
+          } finally {
+            navigator.serviceWorker.removeEventListener(type, listener);
+          }
+        }
+
+        async function check() {
+          if (checking) return;
+          checking = true;
+          try {
+            if (!registration) {
+              registration = await withTimeout(navigator.serviceWorker.getRegistration());
+              if (!registration) {
+                // Only production builds publish an Angular service-worker manifest.
+                const response = await fetch('ngsw.json?ngsw-bypass=true', {
+                  cache: 'no-store',
+                  signal: AbortSignal.timeout(requestTimeout),
+                });
+                const manifest = await response.json();
+                if (manifest.configVersion !== 1 || !manifest.hashTable) return;
+                registration = await withTimeout(
+                  navigator.serviceWorker.register('serviceWorker.js', { updateViaCache: 'none' }),
+                );
+              }
+            }
+            // The development worker only handles notifications, not Angular application versions.
+            const isDevelopmentWorker = (worker) =>
+              worker && new URL(worker.scriptURL).searchParams.get('development') === '1';
+            if (isDevelopmentWorker(registration.active) || isDevelopmentWorker(navigator.serviceWorker.controller))
+              return;
+            // Worker script updates and application-version updates are separate operations.
+            void registration.update().catch(() => {});
+            if (!navigator.serviceWorker.controller) {
+              await waitForWorkerEvent('controllerchange', () => !!navigator.serviceWorker.controller);
+            }
+            if (isDevelopmentWorker(navigator.serviceWorker.controller)) return;
+            if (!associated) {
+              // A newly claimed page needs a fetch before Angular's worker tracks its version.
+              await withTimeout(fetch('manifest.webmanifest'));
+              associated = true;
+            }
+            const worker = navigator.serviceWorker.controller;
+            const nonce = `chahua-startup-${++sequence}`;
+            await waitForWorkerEvent(
+              'message',
+              ({ data }) => data?.type === 'OPERATION_COMPLETED' && data.nonce === nonce,
+              () => worker.postMessage({ action: 'CHECK_FOR_UPDATES', nonce }),
+              updateCheckTimeout,
+            );
+          } catch {
+            // Offline and failed checks are retried independently of Angular startup.
+          } finally {
+            checking = false;
+          }
+        }
+
+        function checkWhenVisible() {
+          if (!document.hidden) void check();
+        }
+
+        void check();
+        setInterval(checkWhenVisible, updateCheckInterval);
+        window.addEventListener('online', check);
+        document.addEventListener('visibilitychange', checkWhenVisible);
+        navigator.serviceWorker.addEventListener('controllerchange', check);
+      })();
+    </script>
+
+    <meta name="color-scheme" content="light dark" />
+    <meta
+      name="viewport"
+      content="viewport-fit=cover, width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <meta name="format-detection" content="telephone=no" />
+    <meta name="msapplication-tap-highlight" content="no" />
+
+    <link rel="icon" type="image/png" href="icon/pwa-64x64.png" />
+
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="icon-maskable/apple-touch-icon-180x180.png" />
+    <meta name="theme-color" content="#f7f7f7" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#0d0d0d" media="(prefers-color-scheme: dark)" />
+
+    <script id="startup-color-mode">
+      (() => {
+        const mode = localStorage.getItem('chahua.preferences.colorMode');
+        const dark = mode === 'dark' || (mode !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches);
+        document.documentElement.classList.toggle('ion-palette-dark', dark);
+        document.documentElement.style.colorScheme = dark ? 'dark' : 'light';
+        for (const meta of document.querySelectorAll('meta[name="theme-color"]'))
+          meta.content = dark ? '#0d0d0d' : '#f7f7f7';
+      })();
+    </script>
+
+    <!-- add to homescreen for ios -->
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <style>
+      .startup-loading {
+        position: fixed;
+        inset: 0;
+        display: grid;
+        place-content: center;
+        justify-items: center;
+        background: var(--ion-toolbar-background, light-dark(#f7f7f7, #0d0d0d));
+        color: var(--ion-text-color, light-dark(#000, #fff));
+        z-index: 99999;
+        padding: 24px;
+        text-align: center;
+        font:
+          16px system-ui,
+          sans-serif;
+        box-sizing: border-box;
+      }
+      .startup-loading [hidden] {
+        display: none;
+      }
+      .startup-brand {
+        display: block;
+        margin: 0 0 24px;
+      }
+      .startup-indicator {
+        height: 32px;
+      }
+      .startup-loading h1 {
+        font-size: 22px;
+        margin: 20px 0 12px;
+      }
+      .startup-description {
+        max-width: 360px;
+        min-height: 48px;
+        margin: 0;
+        line-height: 1.6;
+        opacity: 0.65;
+      }
+      .startup-actions {
+        min-height: 56px;
+        margin-top: 20px;
+      }
+      .startup-actions button {
+        /* Match the application's Ionic iOS solid button without requiring its bundle. */
+        appearance: none;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        box-sizing: border-box;
+        min-height: 3.1em;
+        margin: 4px 2px;
+        padding: 13px 1em;
+        border: 0;
+        border-radius: 14px;
+        font-family: var(--ion-font-family, -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Roboto, sans-serif);
+        font-size: var(--app-font-body, 0.875rem);
+        font-weight: 500;
+        line-height: 1;
+        letter-spacing: 0;
+        -webkit-font-smoothing: antialiased;
+        color: var(--ion-color-primary-contrast, #fff);
+        background: var(--ion-color-primary, #2b7acd);
+        transition: background-color 100ms linear;
+        cursor: pointer;
+      }
+      @media (any-hover: hover) {
+        .startup-actions button:hover {
+          background: var(--ion-color-primary-tint, #4087d2);
+        }
+      }
+      .startup-actions button:active {
+        background: var(--ion-color-primary-shade, #266bb4);
+      }
+      .startup-spinner {
+        display: inline-block;
+        width: 28px;
+        height: 28px;
+        user-select: none;
+      }
+      .startup-spinner svg {
+        width: 100%;
+        height: 100%;
+      }
+      .startup-spinner circle {
+        fill: none;
+        stroke: currentColor;
+        stroke-width: 5.6px;
+        stroke-dasharray: 1px, 200px;
+        stroke-dashoffset: 0;
+        animation: startup-dash 1.4s ease-in-out infinite;
+      }
+      @keyframes startup-dash {
+        0% {
+          stroke-dasharray: 1px, 200px;
+          stroke-dashoffset: 0;
+        }
+        50% {
+          stroke-dasharray: 100px, 200px;
+          stroke-dashoffset: -15px;
+        }
+        100% {
+          stroke-dasharray: 100px, 200px;
+          stroke-dashoffset: -125px;
+        }
+      }
+    </style>
+  </head>
+
+  <body>
+    <div id="startup-screen" class="startup-loading">
+      <img class="startup-brand" src="icon/pwa-192x192.png" width="72" height="72" fetchpriority="high" />
+      <div class="startup-indicator">
+        <span class="startup-spinner">
+          <svg viewBox="24 24 48 48">
+            <circle cx="48" cy="48" r="20" />
+          </svg>
+        </span>
+      </div>
+      <h1 id="startup-title"></h1>
+      <p id="startup-description" class="startup-description"></p>
+      <div class="startup-actions"><button id="startup-reload" type="button" hidden></button></div>
+    </div>
+    <app-root></app-root>
+    <script id="startup-copy" type="application/json">
+      {
+        "en": {
+          "reload": "Reload",
+          "boot": { "title": "", "description": "" },
+          "bootSlow": {
+            "title": "Loading is taking longer",
+            "description": "The app has not finished loading. You can wait or reload the entire app."
+          },
+          "bootFailed": { "title": "Unable to load the app", "description": "" }
+        },
+        "zh-CN": {
+          "reload": "重新加载",
+          "boot": { "title": "", "description": "" },
+          "bootSlow": {
+            "title": "加载时间较长",
+            "description": "应用尚未完成加载。可以继续等待，或重新加载整个应用。"
+          },
+          "bootFailed": { "title": "应用加载遇到问题", "description": "" }
+        },
+        "zh-TW": {
+          "reload": "重新載入",
+          "boot": { "title": "", "description": "" },
+          "bootSlow": {
+            "title": "載入時間較長",
+            "description": "應用程式尚未完成載入。可以繼續等待，或重新載入整個應用程式。"
+          },
+          "bootFailed": { "title": "應用程式載入遇到問題", "description": "" }
+        }
+      }
+    </script>
+    <script id="startup-recovery">
+      (() => {
+        const screen = document.getElementById('startup-screen');
+        const catalogs = JSON.parse(document.getElementById('startup-copy').textContent);
+        let saved;
+        try {
+          saved = localStorage.getItem('chahua.preferences.locale');
+        } catch {}
+        const languages = catalogs[saved] ? [saved] : navigator.languages;
+        let locale = 'en';
+        for (const language of languages) {
+          if (/^zh(?:-|$)/i.test(language)) {
+            locale = /(?:hant|tw|hk|mo)/i.test(language) ? 'zh-TW' : 'zh-CN';
+            break;
+          }
+          if (/^en(?:-|$)/i.test(language)) break;
+        }
+        const copy = catalogs[locale];
+        const title = document.getElementById('startup-title');
+        const description = document.getElementById('startup-description');
+        const reload = document.getElementById('startup-reload');
+        reload.textContent = copy.reload;
+        reload.onclick = () => location.reload();
+        function show(state) {
+          title.textContent = copy[state].title;
+          description.textContent = copy[state].description;
+          reload.hidden = state === 'boot';
+        }
+        show('boot');
+        let finished = false;
+        const timer = setTimeout(() => show('bootSlow'), 10000);
+        function stopListening() {
+          clearTimeout(timer);
+          window.removeEventListener('error', onError, true);
+          window.removeEventListener('unhandledrejection', fail);
+        }
+        function fail() {
+          if (finished) return;
+          stopListening();
+          screen.querySelector('.startup-spinner').hidden = true;
+          show('bootFailed');
+        }
+        function onError(event) {
+          if (event.target instanceof HTMLScriptElement || event.error) fail();
+        }
+        window.addEventListener('error', onError, true);
+        window.addEventListener('unhandledrejection', fail);
+        window.chahuaStartup = {
+          fail,
+          finish() {
+            finished = true;
+            stopListening();
+            screen.remove();
+          },
+        };
+      })();
+    </script>
+  </body>
+</html>

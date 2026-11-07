@@ -1,0 +1,58 @@
+<ion-header>
+  <ion-toolbar>
+    <ion-buttons slot="start">
+      <ion-button (click)="panels.back()">
+        <ion-icon slot="icon-only" [icon]="backIcon"></ion-icon>
+      </ion-button>
+    </ion-buttons>
+    <ion-title>{{ 'settings.presence.title' | transloco }}</ion-title>
+  </ion-toolbar>
+</ion-header>
+<ion-content appScrollbars color="light">
+  <ion-list [inset]="true">
+    @if (loading()) {
+      <ion-item lines="none">
+        <ion-spinner slot="start"></ion-spinner>
+      </ion-item>
+    } @else if (loadError()) {
+      <app-load-error compact [message]="'settings.presence.loadFailed' | transloco" (retry)="loadPresenceSettings()" />
+    } @else {
+      <ion-radio-group [value]="visibility()" (ionChange)="chooseVisibility($event.detail.value)">
+        <ion-item>
+          <ion-icon slot="start" [icon]="everyoneIcon" color="primary"></ion-icon>
+          <ion-radio [value]="Visibility.everyone" [disabled]="saving()" justify="space-between">
+            <span class="ion-text-wrap">{{ 'settings.presence.everyone' | transloco }}</span>
+          </ion-radio>
+        </ion-item>
+        <ion-item>
+          <ion-icon slot="start" [icon]="friendsIcon" color="primary"></ion-icon>
+          <ion-radio [value]="Visibility.friends" [disabled]="saving()" justify="space-between">
+            <span class="ion-text-wrap">{{ 'settings.presence.friends' | transloco }}</span>
+          </ion-radio>
+        </ion-item>
+        <ion-item lines="none">
+          <ion-icon slot="start" [icon]="nobodyIcon" color="primary"></ion-icon>
+          <ion-radio [value]="Visibility.nobody" [disabled]="saving()" justify="space-between">
+            <span class="ion-text-wrap">{{ 'settings.presence.nobody' | transloco }}</span>
+          </ion-radio>
+        </ion-item>
+      </ion-radio-group>
+      <ion-item lines="none">
+        <ion-note class="ion-text-wrap">{{ 'settings.presence.reciprocalNote' | transloco }}</ion-note>
+      </ion-item>
+      <ion-item lines="none" class="save-status">
+        @if (saving()) {
+          <ion-spinner slot="end"></ion-spinner>
+        } @else if (saveError()) {
+          <ion-label class="ion-text-wrap" color="danger">{{ 'settings.presence.saveFailed' | transloco }}</ion-label>
+          <ion-button slot="end" fill="clear" (click)="savePresenceSettings()">
+            {{ 'common.retry' | transloco }}
+          </ion-button>
+        } @else if (saved()) {
+          <ion-label class="saved-feedback" color="medium">{{ 'common.saved' | transloco }}</ion-label>
+        }
+      </ion-item>
+    }
+  </ion-list>
+  <app-privacy-exceptions [kind]="ExceptionKind.presence" />
+</ion-content>

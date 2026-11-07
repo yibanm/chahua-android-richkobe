@@ -1,0 +1,23 @@
+.mention {
+  font: inherit;
+  font-weight: 600;
+  font-size: 0.9em;
+  line-height: 1;
+  border: 0;
+  border-radius: 4px;
+  padding: 2px 3px 2px 0;
+  margin: 0 -1px;
+  vertical-align: baseline;
+  white-space: inherit;
+  overflow-wrap: anywhere;
+  color: var(--message-mention-color, var(--ion-color-primary));
+  background: var(--message-mention-background, color-mix(in srgb, currentColor 10%, transparent));
+
+  &.mention-self {
+    background: var(--message-mention-self-background, color-mix(in srgb, currentColor 20%, transparent));
+  }
+}
+
+button.mention {
+  cursor: pointer;
+}

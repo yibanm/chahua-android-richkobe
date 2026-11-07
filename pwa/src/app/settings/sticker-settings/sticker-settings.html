@@ -1,0 +1,130 @@
+<ion-header>
+  <ion-toolbar>
+    <ion-buttons slot="start">
+      <ion-button (click)="panels.back()">
+        <ion-icon slot="icon-only" [icon]="backIcon"></ion-icon>
+      </ion-button>
+    </ion-buttons>
+    <ion-title>{{ 'settings.stickers.title' | transloco }}</ion-title>
+  </ion-toolbar>
+</ion-header>
+<ion-content appScrollbars color="light">
+  <ion-list [inset]="true">
+    <ion-item>
+      <ion-label>
+        {{ 'settings.stickers.pinnedReactions' | transloco: { count: reactions.pinnedReactions().length } }}
+      </ion-label>
+      <ion-button
+        slot="end"
+        fill="clear"
+        [disabled]="reactions.pinnedReactions().length >= 5"
+        (click)="choosingPinned.set(true)">
+        <ion-icon slot="icon-only" [icon]="icons.addOutline" />
+      </ion-button>
+    </ion-item>
+    <div class="ion-padding-horizontal ion-padding-bottom">
+      @for (emoji of reactions.pinnedReactions(); track emoji) {
+        <ion-chip (click)="removePinned(emoji)">
+          <ion-label>{{ emoji }}</ion-label>
+          <ion-icon [icon]="icons.closeCircleOutline" />
+        </ion-chip>
+      }
+    </div>
+  </ion-list>
+  <ion-list [inset]="true">
+    <ion-item lines="full">
+      <ion-toggle
+        [checked]="preferences.autoSortPacksEnabled()"
+        (ionChange)="preferences.setAutoSortPacks($event.detail.checked)">
+        {{ 'settings.stickers.autoSortPacks' | transloco }}
+      </ion-toggle>
+    </ion-item>
+    <ion-item lines="full">
+      <ion-toggle
+        [checked]="preferences.autoSortFavoritesEnabled()"
+        (ionChange)="preferences.setAutoSortFavorites($event.detail.checked)">
+        {{ 'settings.stickers.autoSortFavorites' | transloco }}
+      </ion-toggle>
+    </ion-item>
+    <ion-item [button]="true" [detail]="false" (click)="addPacks()">
+      <ion-icon slot="start" [icon]="icons.addOutline" color="primary"></ion-icon>
+      <ion-label color="primary">{{ 'stickers.discovery.title' | transloco }}</ion-label>
+    </ion-item>
+  </ion-list>
+  <ion-list [inset]="true">
+    @if (loading() && !loaded()) {
+      <ion-item lines="none"><ion-spinner /></ion-item>
+    }
+    @if (loadError()) {
+      <app-load-error compact [message]="'settings.stickers.loadFailed' | transloco" (retry)="load()" />
+    }
+    @if (loaded()) {
+      <ion-reorder-group [disabled]="savingOrder()" (ionItemReorder)="reorder($event)">
+        @for (pack of orderedPacks(); track pack.id) {
+          @if (
+            preferences.autoSortPacksEnabled() && orderedPacks().length > autoSortLimit && $index === autoSortLimit
+          ) {
+            <div class="sort-divider">
+              <span>{{ 'settings.stickers.sortDivider' | transloco }}</span>
+            </div>
+          }
+          <ion-item [button]="true" [detail]="false" (click)="openPack(pack)">
+            <div slot="start" class="pack-preview">
+              @if (pack.previewSticker?.media.contentType.startsWith('video/')) {
+                <video
+                  [src]="pack.previewSticker!.media.url"
+                  autoplay
+                  loop
+                  [muted]="true"
+                  playsinline
+                  preload="metadata"></video>
+              } @else if (pack.previewSticker) {
+                <img [src]="pack.previewSticker.media.url" loading="lazy" decoding="async" />
+              } @else {
+                <ion-icon [icon]="icons.cubeOutline" color="medium"></ion-icon>
+              }
+            </div>
+            <ion-label>
+              <h2>
+                @if (ownedIds().has(pack.id)) {
+                  <ion-badge color="primary">{{ 'settings.stickers.owned' | transloco }}</ion-badge>
+                }
+                <span class="pack-name">{{ pack.name }}</span>
+              </h2>
+              <p>{{ 'stickers.count' | transloco: { count: pack.stickerCount } }}</p>
+            </ion-label>
+            <ion-reorder slot="end" (click)="$event.stopPropagation()" />
+          </ion-item>
+        }
+      </ion-reorder-group>
+      @if (savingOrder()) {
+        <ion-item lines="none">
+          <ion-note>{{ 'common.saving' | transloco }}</ion-note>
+          <ion-spinner slot="end" />
+        </ion-item>
+      } @else if (orderFailed()) {
+        <ion-item lines="none">
+          <ion-note class="ion-text-wrap" color="danger">{{ 'settings.stickers.orderFailed' | transloco }}</ion-note>
+          <ion-button slot="end" fill="clear" (click)="saveOrder()">{{ 'common.retry' | transloco }}</ion-button>
+        </ion-item>
+      }
+    }
+  </ion-list>
+</ion-content>
+
+<ion-modal
+  [enterAnimation]="enterEmojiAnimation"
+  [leaveAnimation]="leaveEmojiAnimation"
+  class="emoji-panel-modal"
+  [keepContentsMounted]="true"
+  [isOpen]="choosingPinned()"
+  (didDismiss)="choosingPinned.set(false)">
+  <ng-template>
+    <app-emoji-panel
+      [active]="choosingPinned()"
+      [title]="'settings.stickers.pinnedReactions' | transloco: { count: reactions.pinnedReactions().length }"
+      (chosen)="addPinned($event)"
+      (back)="choosingPinned.set(false)"
+      (dismissed)="choosingPinned.set(false)" />
+  </ng-template>
+</ion-modal>

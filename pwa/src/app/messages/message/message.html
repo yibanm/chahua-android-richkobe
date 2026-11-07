@@ -1,0 +1,239 @@
+@if (message().messageType === system) {
+  <p
+    #systemMessage
+    class="system-message"
+    [attr.inert]="selecting() ? '' : null"
+    (contextmenu)="showMenu($event, systemMessage)"
+    (pointerdown)="startPress($event, systemMessage)">
+    <app-message-preview [message]="message()" [interactive]="canInteract()"></app-message-preview>
+  </p>
+} @else {
+  @if (selecting()) {
+    <span class="selection-mark">
+      @if (selected()) {
+        <svg viewBox="0 0 16 16">
+          <path
+            d="M3 7.5 6.5 11 13 4.5"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="square"
+            stroke-linejoin="miter" />
+        </svg>
+      }
+    </span>
+  }
+  <!-- Let the host receive selection clicks, including over disabled buttons and media controls. -->
+  <div
+    class="chat-row"
+    [attr.inert]="selecting() ? '' : null"
+    [class.sent]="own()"
+    [class.group-start]="first()"
+    [class.no-details]="!showDetails()"
+    [class.group-end]="last()"
+    [class.last]="showAvatar()"
+    [class.preview]="preview()"
+    [class.dragging]="dragging()"
+    [style.transform]="swipe() ? 'translateX(-' + swipe() + 'px)' : null"
+    (pointerdown)="startSwipe($event)"
+    (pointermove)="moveSwipe($event)"
+    (pointerup)="endSwipe()"
+    (pointercancel)="endSwipe(true)">
+    @if (canInteract() && canReply()) {
+      <div
+        class="swipe-reply"
+        [style.translate]="swipe() + 'px -50%'"
+        [style.opacity]="progress()"
+        [style.scale]="0.5 + progress() * 0.5"
+        [class.burst]="burst()"
+        (animationend)="burst.set(false)">
+        <svg viewBox="0 0 512 512">
+          <path
+            d="M240 424v-96c116.4 0 159.39 33.76 208 96 0-119.23-39.57-240-208-240V88L64 256Z"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="35"
+            stroke-linejoin="round" />
+          <path
+            d="M240 424v-96c116.4 0 159.39 33.76 208 96 0-119.23-39.57-240-208-240V88L64 256Z"
+            fill="currentColor"
+            [style.clip-path]="'inset(0 0 0 ' + (1 - fillProgress()) * 100 + '%)'" />
+        </svg>
+      </div>
+    }
+    @if (showDetails()) {
+      <span class="avatar-slot">
+        @if (showAvatar()) {
+          <ion-avatar
+            (click)="profile()"
+            class="avatar"
+            [style.visibility]="stickyAvatar() ? 'hidden' : null"
+            [class.placeholder]="!message().sender.avatarUrl">
+            @if (message().sender.avatarUrl; as src) {
+              <img [src]="src" width="34" height="34" decoding="async" />
+            } @else {
+              {{ (name() | avatarText: 2).toUpperCase() }}
+            }
+          </ion-avatar>
+        }
+      </span>
+    }
+    <div
+      #bubble
+      [class]="isSticker() ? 'sticker-content' : 'bubble'"
+      [class.media-only]="mediaOnly()"
+      (contextmenu)="showMenu($event, bubble)"
+      (pointerdown)="startPress($event, bubble)">
+      <div class="bubble-surface">
+        @if (
+          first() &&
+          !isSticker() &&
+          message().messageType !== Type.forwarded &&
+          !message().forwardedFrom &&
+          showDetails()
+        ) {
+          <app-message-author
+            class="sender"
+            [sender]="message().sender"
+            [own]="own()"
+            (click)="profile()"></app-message-author>
+        }
+        @if (origin(); as origin) {
+          <app-forwarded-label class="forward-origin" [name]="origin.sender.name" />
+          @if (origin.originalReplyTo; as originalReply) {
+            @if (!originalReply.isDeleted) {
+              <div class="reply-preview original-reply">
+                <span class="reply-content">
+                  @if (originalReply.forwardedFromName) {
+                    <app-forwarded-label [name]="originalReply.forwardedFromName" />
+                  } @else {
+                    <span class="reply-name">{{ originalReply.sender.name ?? originalReply.sender.uid }}</span>
+                  }
+                  <span class="reply-text"><app-message-preview [message]="originalReply" /></span>
+                </span>
+              </div>
+            }
+          }
+        }
+        @if (quoted(); as quote) {
+          <button
+            type="button"
+            class="reply-preview"
+            [attr.inert]="preview() ? '' : null"
+            [disabled]="jumpDisabled() || !canInteract()"
+            [class.busy]="jumpingTo() === quote.id"
+            (click)="jump.emit(quote.id)">
+            <span class="reply-content">
+              @if (quote.forwardedFromName) {
+                <app-forwarded-label [name]="quote.forwardedFromName" />
+              } @else {
+                <span class="reply-name">{{ quoteName() }}</span>
+              }
+              <span class="reply-text"><app-message-preview [message]="quote"></app-message-preview></span>
+            </span>
+            @if (jumpingTo() === quote.id) {
+              <ion-spinner></ion-spinner>
+            }
+          </button>
+        }
+        @if (hasMedia()) {
+          <div class="media-content" [attr.inert]="preview() ? '' : null" (click)="sticker($event)">
+            <app-message-attachments
+              [message]="message()"
+              [dockEnabled]="!record()"
+              [overlayTime]="mediaOverlay()"
+              [outgoing]="own()"
+              [delivery]="status()"
+              [read]="read()"
+              [uploads]="uploads()"
+              (retryUpload)="retryUpload.emit($event)"
+              (removeUpload)="removeUpload.emit($event)"></app-message-attachments>
+          </div>
+        }
+        @if (!mediaOverlay()) {
+          @let showForwardedCard = !hasMedia() && message().messageType === Type.forwarded && !message().isDeleted;
+          <ng-template #timestamp>
+            <time class="timestamp" [attr.datetime]="message().createdAt">
+              @if (message().isEdited) {
+                <span>{{ 'messages.message.edited' | transloco }}</span>
+              }
+              {{ message().createdAt | localDate: 'time' }}
+              <app-message-status [delivery]="status()" [read]="read()" />
+            </time>
+          </ng-template>
+          <div class="message-body">
+            @if (!hasMedia()) {
+              <span class="message-text">
+                @if (message().messageType === Type.placeholder) {
+                  <app-message-preview [message]="message()" />
+                } @else if (showForwardedCard) {
+                  <button
+                    type="button"
+                    class="forwarded-card"
+                    [disabled]="preview() || selecting() || (!canInteract() && savedId() == null && !record())"
+                    (click)="openBundle()">
+                    <app-forwarded-card [preview]="message().forwardedPreview">
+                      <ng-container [ngTemplateOutlet]="timestamp" />
+                    </app-forwarded-card>
+                  </button>
+                } @else if (message().messageType === Type.invite) {
+                  <button type="button" class="invite-card" [disabled]="!canInteract()" (click)="invite($event)">
+                    <app-invite-card [code]="message().message ?? ''" />
+                  </button>
+                } @else if (message().message) {
+                  <app-message-text
+                    [text]="message().message!"
+                    [mentions]="message().mentions ?? []"
+                    [interactive]="canInteract()"
+                    [profilesEnabled]="!record()" />
+                } @else {
+                  <app-message-preview [message]="message()" />
+                }
+              </span>
+            } @else if (message().message) {
+              <span class="message-text">
+                <app-message-text
+                  [text]="message().message!"
+                  [mentions]="message().mentions ?? []"
+                  [interactive]="canInteract()"
+                  [profilesEnabled]="!record()" />
+              </span>
+            }
+            @if (!showForwardedCard) {
+              <ng-container [ngTemplateOutlet]="timestamp" />
+            }
+            @if (recalled()) {
+              <span class="recalled-mark">{{ 'messages.message.recalled' | transloco }}</span>
+            }
+          </div>
+        }
+        @if (threadInfo(); as info) {
+          <app-message-thread
+            [info]="info"
+            [preview]="!canInteract() || record()"
+            (open)="showThread()"></app-message-thread>
+        }
+      </div>
+      @if (busy()) {
+        <span class="acting"><ion-spinner></ion-spinner></span>
+      }
+    </div>
+    @if (status() === Delivery.Failed && !preview() && !hasUploadFailure()) {
+      <button type="button" class="retry-button" (click)="retry.emit()">
+        <ion-icon [icon]="retryIcon" />
+      </button>
+    }
+    @if (hasReactions()) {
+      <app-message-reactions
+        [reactions]="message().reactions ?? []"
+        [own]="own()"
+        [preview]="!canInteract() || record()"
+        (react)="react.emit($event)"></app-message-reactions>
+    }
+    @if (canInteract() && !record() && status() !== Delivery.Failed) {
+      <button type="button" class="reply-button" [disabled]="!canReply()" (click)="reply.emit(message())">
+        <ion-icon [icon]="replyIcon"></ion-icon>
+      </button>
+    }
+  </div>
+}

@@ -1,0 +1,10 @@
+ion-spinner {
+  display: none;
+  position: absolute;
+  inset: 0;
+  margin: auto;
+}
+
+ion-alert.requesting ion-spinner {
+  display: block;
+}

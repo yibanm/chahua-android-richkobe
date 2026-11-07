@@ -1,0 +1,232 @@
+@if (!embedded()) {
+  <ion-header>
+    <ion-toolbar>
+      @if (!selectable() && panels.paths().length > 1) {
+        <ion-buttons slot="start">
+          <ion-button (click)="panels.back()">
+            <ion-icon slot="icon-only" [icon]="icons.chevronBackOutline" />
+          </ion-button>
+        </ion-buttons>
+      }
+      <ion-title>
+        {{ pack()?.name || ('stickers.title' | transloco) }}
+        @if (!selectable() && pack(); as pack) {
+          <p class="subtitle">{{ 'stickers.count' | transloco: { count: pack.stickerCount } }}</p>
+        }
+      </ion-title>
+      <ion-buttons slot="end">
+        <ion-button (click)="panels.close()">{{ 'common.done' | transloco }}</ion-button>
+      </ion-buttons>
+    </ion-toolbar>
+  </ion-header>
+  <ion-content appScrollbars><ng-container [ngTemplateOutlet]="library" /></ion-content>
+  @if (!selectable()) {
+    <ion-footer>
+      <ion-toolbar>
+        <ion-grid>
+          <ion-row>
+            <ion-col size="6">
+              <ion-button
+                expand="block"
+                [color]="chosen()?.isFavorited ? 'danger' : 'primary'"
+                [disabled]="busy() || !chosen()"
+                (click)="favorite(chosen()!)">
+                {{ (chosen()?.isFavorited ? 'stickers.unfavorite' : 'stickers.favoriteOne') | transloco }}
+              </ion-button>
+            </ion-col>
+            <ion-col size="6">
+              <ion-button
+                expand="block"
+                [color]="pack()?.isSubscribed ? 'danger' : 'primary'"
+                [disabled]="busy() || !pack()"
+                (click)="subscribe()">
+                {{ (pack()?.isSubscribed ? 'stickers.unsubscribe' : 'stickers.subscribeAll') | transloco }}
+              </ion-button>
+            </ion-col>
+          </ion-row>
+        </ion-grid>
+      </ion-toolbar>
+    </ion-footer>
+  }
+} @else {
+  <ng-container [ngTemplateOutlet]="library" />
+}
+<ng-template #library>
+  @if (!selectable() && pack()?.description; as description) {
+    <p class="pack-description">{{ 'stickers.description' | transloco }}{{ description }}</p>
+  }
+  @if (selectable() && !embedded() && pack(); as pack) {
+    <ion-button fill="clear" [disabled]="busy()" (click)="subscribe()">
+      {{ (pack.isSubscribed ? 'stickers.removePack' : 'stickers.addPack') | transloco }}
+    </ion-button>
+  }
+  <div
+    #libraryScroll
+    [appScrollbars]="embedded()"
+    class="sticker-library"
+    [class.grouped]="grouped()"
+    (scroll)="scroll.onScroll()">
+    @for (group of groups(); track group.id) {
+      @let renderGroup = scroll.renders(group.id);
+      @let canAdd = selectable() && group.id != null && group.ownerUid === session.user()?.uid;
+      <section #groupSection class="sticker-group">
+        @if (grouped()) {
+          <h3 class="group-title">{{ group.name ?? ('stickers.favorites' | transloco) }}</h3>
+        }
+        <div class="sticker-grid" [class.failed]="grouped() && group.id != null && group.error && !group.content">
+          @if (renderGroup && canAdd && group.content) {
+            <input #stickerFile type="file" accept="image/*,video/webm" hidden (change)="upload($event, group.id)" />
+            <button
+              type="button"
+              class="sticker-item sticker-add"
+              [title]="'stickers.add' | transloco"
+              [disabled]="busy()"
+              (click)="stickerFile.click()">
+              <ion-icon [icon]="icons.addOutline" />
+            </button>
+          }
+          @for (sticker of renderGroup ? (group.content?.stickers ?? []) : []; track sticker.id) {
+            <button
+              type="button"
+              class="sticker-item"
+              [class.selected]="!selectable() && chosen()?.id === sticker.id"
+              (click)="send(sticker, group.id ?? null)"
+              (pointerdown)="press(sticker, $event)"
+              (pointermove)="move($event)"
+              (pointerup)="cancelHold()"
+              (pointercancel)="cancelHold()"
+              (contextmenu)="showMenu(sticker, $event)">
+              <span class="sticker-tile-skeleton skeleton-block"></span>
+              @if (sticker.media.contentType.startsWith('video/')) {
+                <video
+                  appMediaLoaded
+                  [src]="sticker.media.url"
+                  autoplay
+                  loop
+                  [muted]="true"
+                  playsinline
+                  preload="metadata"></video>
+              } @else {
+                <img appMediaLoaded [src]="sticker.media.url" loading="lazy" decoding="async" />
+              }
+            </button>
+          }
+          @if (
+            grouped() &&
+            ((group.id != null && !group.content) || (!renderGroup && (group.content?.stickers?.length || canAdd)))
+          ) {
+            <div class="group-placeholder" [style.--placeholder-rows]="group.placeholderRows">
+              @if (group.fetching && !group.content) {
+                @for (slot of [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]; track slot) {
+                  @if (slot < group.placeholderRows! * 4) {
+                    <span class="skeleton-block sticker-skeleton"></span>
+                  }
+                }
+              }
+            </div>
+          } @else if (group.loading && !group.content) {
+            @for (slot of [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]; track slot) {
+              <span class="skeleton-block sticker-skeleton"></span>
+            }
+          }
+          @if (group.error) {
+            <p class="empty">
+              {{ 'stickers.loadFailed' | transloco }}
+              <ion-button fill="clear" (click)="retryGroup(group)">{{ 'common.retry' | transloco }}</ion-button>
+            </p>
+          } @else if (!canAdd && (group.content || !group.loading) && !group.content?.stickers?.length) {
+            <p class="empty">{{ 'stickers.empty' | transloco }}</p>
+          }
+        </div>
+        @if (group.uploadError) {
+          <p class="empty upload-error">{{ 'stickers.addFailed' | transloco }}</p>
+        }
+      </section>
+    }
+  </div>
+  @if (selectable() || packs().length > 1) {
+    <div class="pack-bar">
+      <div appScrollbars class="pack-tabs">
+        @if (selectable()) {
+          <button
+            #packTab
+            type="button"
+            class="pack-tab"
+            [class.selected]="activeId() == null"
+            [disabled]="busy() && !grouped()"
+            (click)="selectFavorites()">
+            <ion-icon [icon]="icons.heart" />
+          </button>
+        }
+        @for (item of packs(); track item.id) {
+          <button
+            #packTab
+            type="button"
+            class="pack-tab"
+            [class.selected]="activeId() === item.id"
+            [disabled]="busy() && !grouped()"
+            (click)="selectPack(item.id)"
+            [title]="item.name">
+            @if (item.previewSticker?.media?.contentType?.startsWith('image/')) {
+              <img [src]="item.previewSticker!.media.url" />
+            } @else if (item.previewSticker?.media?.contentType?.startsWith('video/')) {
+              <video
+                [src]="item.previewSticker!.media.url"
+                autoplay
+                loop
+                [muted]="true"
+                playsinline
+                preload="metadata"></video>
+            } @else {
+              <ion-icon [icon]="icons.cubeOutline" />
+            }
+          </button>
+        }
+      </div>
+      @if (selectable()) {
+        <div class="pack-actions">
+          <button
+            type="button"
+            class="pack-tab"
+            [title]="'stickers.discovery.title' | transloco"
+            routerLink="/sticker-discovery">
+            <ion-icon [icon]="icons.addOutline" />
+          </button>
+          <button
+            type="button"
+            class="pack-tab"
+            [title]="'settings.menu.stickers' | transloco"
+            [disabled]="busy()"
+            routerLink="/settings/stickers">
+            <ion-icon [icon]="icons.settingsOutline" />
+          </button>
+        </div>
+      }
+    </div>
+  }
+</ng-template>
+<ion-popover [isOpen]="!!menu()" [event]="menu()?.event" (didDismiss)="menu.set(undefined)">
+  <ng-template>
+    <ion-list>
+      <ion-item [button]="true" (click)="toggleFavorite()">
+        <ion-label>
+          {{ (menu()?.sticker?.isFavorited ? 'stickers.unfavorite' : 'stickers.favorite') | transloco }}
+        </ion-label>
+      </ion-item>
+    </ion-list>
+  </ng-template>
+</ion-popover>
+<ion-toast
+  [isOpen]="favoriteFailed()"
+  [message]="'stickers.favoriteFailed' | transloco"
+  [duration]="2500"
+  (didDismiss)="favoriteFailed.set(false)" />
+@if (pendingUpload()) {
+  <app-sticker-editor
+    [title]="'stickers.addTitle' | transloco"
+    [withEmoji]="true"
+    [busy]="busy()"
+    [error]="uploadError()"
+    (confirmed)="saveUpload($event)"
+    (closed)="pendingUpload.set(undefined)" />
+}

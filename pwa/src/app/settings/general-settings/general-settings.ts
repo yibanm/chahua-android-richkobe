@@ -1,0 +1,116 @@
+import { Component, DestroyRef, inject, signal } from '@angular/core';
+import { RouterLink } from '@angular/router';
+import {
+  IonButton,
+  IonButtons,
+  IonContent,
+  IonHeader,
+  IonIcon,
+  IonItem,
+  IonLabel,
+  IonList,
+  IonListHeader,
+  IonNote,
+  IonRadio,
+  IonRadioGroup,
+  IonRange,
+  IonSpinner,
+  IonTitle,
+  IonToggle,
+  IonToolbar,
+  type ToggleCustomEvent,
+} from '@ionic/angular';
+import { TranslocoPipe } from '@jsverse/transloco';
+import {
+  chatbubblesOutline,
+  chevronBackOutline,
+  contrastOutline,
+  happyOutline,
+  moonOutline,
+  peopleOutline,
+  personCircleOutline,
+  personOutline,
+  shieldCheckmarkOutline,
+  sunnyOutline,
+} from 'ionicons/icons';
+import { PanelNavigation } from '../../navigation/panel-navigation';
+import { ContentScrollbars } from '../../scrolling/content-scrollbars';
+import { SessionStore } from '../../session/session-store';
+import { ChatFontSize, chatFontSizes } from '../chat-font-size';
+import { ColorMode } from '../color-mode';
+import { Preferences } from '../preferences';
+
+@Component({
+  selector: 'app-general-settings',
+  templateUrl: './general-settings.html',
+  styleUrl: './general-settings.scss',
+  imports: [
+    RouterLink,
+    ContentScrollbars,
+    TranslocoPipe,
+    IonButton,
+    IonButtons,
+    IonContent,
+    IonHeader,
+    IonIcon,
+    IonItem,
+    IonLabel,
+    IonList,
+    IonListHeader,
+    IonNote,
+    IonRange,
+    IonRadio,
+    IonRadioGroup,
+    IonSpinner,
+    IonTitle,
+    IonToggle,
+    IonToolbar,
+  ],
+  host: { class: 'ion-page' },
+})
+export class GeneralSettings {
+  protected readonly session = inject(SessionStore);
+  private readonly destroyRef = inject(DestroyRef);
+  protected readonly saving = signal(false);
+  protected readonly saveError = signal(false);
+  protected readonly membershipIcon = peopleOutline;
+  protected readonly preferences = inject(Preferences);
+  protected readonly panels = inject(PanelNavigation);
+  protected readonly ColorMode = ColorMode;
+  protected readonly threadsIcon = chatbubblesOutline;
+  protected readonly FontSize = ChatFontSize;
+  protected readonly fontSizes = chatFontSizes;
+  protected readonly avatarsIcon = personCircleOutline;
+  protected readonly dmDetailsIcon = personOutline;
+  protected readonly antiRecallIcon = shieldCheckmarkOutline;
+  protected readonly systemIcon = contrastOutline;
+  protected readonly lightIcon = sunnyOutline;
+  protected readonly darkIcon = moonOutline;
+  protected readonly backIcon = chevronBackOutline;
+  protected readonly stickerIcon = happyOutline;
+
+  protected setFontSize(value: number | { lower: number; upper: number }) {
+    if (typeof value === 'number') this.preferences.setChatFontSize(value);
+  }
+
+  protected setColorMode(value: ColorMode) {
+    this.preferences.setColorMode(value);
+  }
+
+  protected async saveMembershipMessages(event: ToggleCustomEvent) {
+    if (this.saving() || !this.session.user()) return;
+    const uid = this.session.user()!.uid;
+    this.saving.set(true);
+    this.saveError.set(false);
+    try {
+      await this.preferences.setShowMembershipMessages(event.detail.checked);
+    } catch {
+      if (!this.destroyRef.destroyed && this.session.user()?.uid === uid) this.saveError.set(true);
+    } finally {
+      if (!this.destroyRef.destroyed) {
+        event.target.checked = this.preferences.showMembershipMessages();
+        this.saving.set(false);
+      }
+    }
+  }
+}

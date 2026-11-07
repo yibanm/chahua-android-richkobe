@@ -1,0 +1,11 @@
+<ion-header>
+  <ion-toolbar>
+    <ion-buttons slot="start"><app-page-back fallback="/chats" /></ion-buttons>
+    <ion-title>{{ 'conversation.savedTitle' | transloco }}</ion-title>
+  </ion-toolbar>
+</ion-header>
+<ion-content appScrollbars color="light">
+  @if (active()) {
+    <app-saved-message-list />
+  }
+</ion-content>

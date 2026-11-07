@@ -1,0 +1,89 @@
+:host {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 4px 0;
+  position: relative;
+  z-index: 10;
+}
+
+:host(.own) {
+  justify-content: flex-end;
+}
+
+.reaction {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 12px;
+  background: var(--ion-color-light-shade);
+  color: var(--ion-color-light-contrast);
+  font-size: 21px;
+  line-height: 1;
+}
+
+button.reaction {
+  transition: transform 0.15s ease;
+
+  &:active {
+    transform: scale(0.95);
+  }
+}
+
+.reacted,
+:host(.own) .reaction {
+  background: var(--ion-color-primary-tint);
+  color: var(--ion-color-primary-contrast);
+}
+
+:host(.own) .reacted {
+  background: var(--ion-color-primary-shade);
+}
+
+.emoji {
+  margin: 0.5px 0 0.5px 6px;
+  font-size: 18.5px;
+  line-height: 1;
+}
+
+.count {
+  font-size: 12px;
+  opacity: 0.7;
+}
+
+.reactors {
+  display: inline-flex;
+  align-items: center;
+  margin: 1.5px;
+}
+
+.reactor {
+  &.placeholder {
+    color: var(--ion-color-primary-contrast);
+  }
+  display: grid;
+  place-items: center;
+  position: relative;
+  width: 23px;
+  height: 23px;
+  border-radius: 50%;
+  border: 1px solid currentColor;
+  overflow: hidden;
+  font-size: 11px;
+
+  & + & {
+    margin-left: -9px;
+  }
+
+  img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+}
+
+.overflow {
+  font-size: 11px;
+  margin-left: 2px;
+  margin-right: 4px;
+  opacity: 0.7;
+}

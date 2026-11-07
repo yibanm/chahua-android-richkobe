@@ -1,0 +1,2184 @@
+import { DOCUMENT, Location, NgTemplateOutlet } from '@angular/common';
+import {
+  afterNextRender,
+  afterRenderEffect,
+  ChangeDetectorRef,
+  Component,
+  computed,
+  DestroyRef,
+  effect,
+  ElementRef,
+  inject,
+  input,
+  linkedSignal,
+  signal,
+  untracked,
+  viewChild,
+  viewChildren,
+  type Signal,
+} from '@angular/core';
+import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
+import {
+  ActivatedRoute,
+  NavigationEnd,
+  NavigationSkipped,
+  NavigationSkippedCode,
+  Router,
+  RouterLink,
+} from '@angular/router';
+import {
+  IonAlert,
+  IonBadge,
+  IonButton,
+  IonButtons,
+  IonContent,
+  IonFab,
+  IonFabButton,
+  IonFooter,
+  IonHeader,
+  IonIcon,
+  IonItem,
+  IonLabel,
+  IonList,
+  IonPopover,
+  IonRouterOutlet,
+  IonSpinner,
+  IonTitle,
+  IonToast,
+  IonToolbar,
+  NavController,
+} from '@ionic/angular';
+import { TranslocoPipe } from '@jsverse/transloco';
+import {
+  archive,
+  archiveOutline,
+  arrowRedoOutline,
+  arrowUndoOutline,
+  at,
+  chevronBack,
+  chevronDown,
+  chevronUpOutline,
+  closeCircleOutline,
+  closeOutline,
+  createOutline,
+  ellipsisVertical,
+  heartOutline,
+  informationCircleOutline,
+  listOutline,
+  notificationsOffOutline,
+  notificationsOutline,
+  returnDownBackOutline,
+  returnUpForwardOutline,
+  searchOutline,
+  trashOutline,
+} from 'ionicons/icons';
+import { firstValueFrom, forkJoin, of, Subject, takeUntil, timer } from 'rxjs';
+import { RpcApi } from '../../../generated/rpc-api';
+import {
+  GroupKind,
+  GroupRole,
+  MessageType,
+  NotificationType,
+  ServerWsMessageType,
+  type MentionInfo,
+  type MessageResponse,
+  type PinResponse,
+  type ThreadUpdatePayload,
+} from '../../../generated/models';
+import { Connection, ResyncReason } from '../../api/connection';
+import { decodeId, encodeId, type SnowflakeID } from '../../api/snowflake-id';
+import { AvatarColor, AvatarTextPipe } from '../../chats/avatar-text.pipe';
+import { ChatAvatar, conversationAvatar } from '../../chats/chat-avatar/chat-avatar';
+import { ChatMute } from '../../chats/chat-mute/chat-mute';
+import { ChatChangeKind, ChatStore } from '../../chats/chat-store';
+import { SpeakingAction } from '../../chats/speaking';
+import { ForwardPicker } from '../../messages/forward-picker/forward-picker';
+import { ForwardedLabel } from '../../messages/forwarded-label';
+import {
+  canForward,
+  canSelect,
+  ForwardSelectionError,
+  forwardSourceMessage,
+  MAX_FORWARD_MESSAGES,
+  type ForwardSourcesResult,
+} from '../../messages/forwarding';
+import { MessageActions } from '../../messages/message-actions';
+import { MessageComposer, type Composition } from '../../messages/message-composer/message-composer';
+import { MessageDatePipe } from '../../messages/message-date.pipe';
+import { MessageMenu } from '../../messages/message-menu/message-menu';
+import { MessageOutbox, type OutgoingMessage } from '../../messages/message-outbox';
+import { MessagePreview } from '../../messages/message-preview/message-preview';
+import { isVisibleMessage } from '../../messages/message-visibility';
+import { Message, type MessageContent } from '../../messages/message/message';
+import { isMembershipMessage } from '../../messages/system-message';
+import { userColors } from '../../messages/user-colors';
+import { VoiceBar } from '../../messages/voice-player/voice-bar';
+import { VoicePlayback } from '../../messages/voice-player/voice-playback';
+import { PanelNavigation } from '../../navigation/panel-navigation';
+import { GroupPresenceDisplay, UserPresenceDisplay } from '../../presence/presence-display';
+import { ContentScrollbars } from '../../scrolling/content-scrollbars';
+import { scrollActivity } from '../../scrolling/scroll-activity';
+import { SessionStore } from '../../session/session-store';
+import { Preferences } from '../../settings/preferences';
+import { LoadError } from '../../ui/load-error/load-error';
+import {
+  ConversationNavigation,
+  ConversationTargetKind,
+  type ConversationTarget,
+  type ForwardDraftLocation,
+} from '../conversation-navigation';
+import { ConversationError, ConversationStore, PageDirection } from '../conversation-store';
+import { ConversationViewportHeader } from '../conversation-viewport-header';
+import { DraftStore } from '../draft-store';
+import { messageRows } from '../message-rows';
+
+function parseMessageId(id: string | null | undefined) {
+  return id && /^[1-9]\d{0,18}$/.test(id) && BigInt(id) <= 9223372036854775807n ? encodeId(id) : undefined;
+}
+
+const enum PositionKind {
+  Bottom,
+  Unread,
+  Message,
+  Anchor,
+}
+
+export enum ThreadError {
+  Load = 1,
+  Update,
+}
+
+enum ThreadActionKind {
+  Subscribe,
+  Archive,
+  Unarchive,
+}
+
+type SelectedMessage = MessageResponse | OutgoingMessage;
+
+type ScrollPosition =
+  | { type: PositionKind.Bottom }
+  // Unread anchors on the divider captured on entry unless a messageId names the live unread start.
+  | { type: PositionKind.Unread; messageId?: SnowflakeID }
+  | { type: PositionKind.Message; messageId: SnowflakeID }
+  | { type: PositionKind.Anchor; messageId: SnowflakeID; offset: number };
+
+@Component({
+  selector: 'app-conversation',
+  templateUrl: './conversation.page.html',
+  styleUrls: ['../conversation-header.scss', './conversation.page.scss'],
+  providers: [ConversationStore, MessageActions],
+  host: {
+    '[class.details-open]': 'sidebarOpen() || stickerSidebarOpen()',
+    '(dragover)': 'composer()?.dragover($event)',
+    '(drop)': 'composer()?.drop($event)',
+    '(document:visibilitychange)': 'visibilityChanged()',
+    '(window:pagehide)': 'saveDraft()',
+  },
+  imports: [
+    ConversationViewportHeader,
+    ForwardPicker,
+    ForwardedLabel,
+    AvatarColor,
+    AvatarTextPipe,
+    ContentScrollbars,
+    MessageDatePipe,
+    TranslocoPipe,
+    GroupPresenceDisplay,
+    UserPresenceDisplay,
+    ChatMute,
+    ChatAvatar,
+    RouterLink,
+    Message,
+    MessageMenu,
+    MessageComposer,
+    MessagePreview,
+    VoiceBar,
+    LoadError,
+    NgTemplateOutlet,
+    IonAlert,
+    IonBadge,
+    IonButton,
+    IonButtons,
+    IonContent,
+    IonFab,
+    IonFabButton,
+    IonFooter,
+    IonHeader,
+    IonIcon,
+    IonItem,
+    IonLabel,
+    IonList,
+    IonPopover,
+    IonSpinner,
+    IonTitle,
+    IonToolbar,
+    IonToast,
+  ],
+})
+export class ConversationPage {
+  readonly detailsContext = computed(() => ({
+    chatId: this.id(),
+    threadId: this.threadId(),
+    threadRoot: this.threadRoot(),
+  }));
+  protected readonly stickySender = signal<MessageContent['sender'] | undefined>(undefined);
+  protected readonly stickyOffset = signal(0);
+  protected readonly stickyRow = signal<number | undefined>(undefined);
+  private readonly wide = window.matchMedia('(min-width: 1200px)');
+  protected readonly largeScreen = signal(this.wide.matches);
+  private readonly panels = inject(PanelNavigation);
+  protected readonly sidebarOpen = computed(() => this.panels.sidebar());
+  protected readonly stickerSidebarOpen = computed(
+    () => this.largeScreen() && !this.selecting() && !!this.composer()?.stickersVisible(),
+  );
+  protected stickersOpened() {
+    if (this.largeScreen() && this.sidebarOpen()) void this.panels.close();
+  }
+  protected readonly infoIcon = informationCircleOutline;
+  protected details() {
+    this.composer()?.closeStickers();
+    if (this.sidebarOpen()) void this.panels.close();
+    else
+      void this.router.navigate([
+        '/chats/chat',
+        decodeId(this.id()),
+        ...(this.threadId() ? ['thread', decodeId(this.threadId()!)] : []),
+        'info',
+      ]);
+  }
+  protected readonly toolbarIcons = {
+    searchOutline,
+    forwardOutline: arrowRedoOutline,
+    notificationsOutline,
+    notificationsOffOutline,
+    chevronBack,
+    ellipsisVertical,
+  };
+  protected search() {
+    return this.router.navigate(['/chats/chat', decodeId(this.id()), 'search']);
+  }
+  protected readonly compactToolbar = signal(false);
+  private readonly toolbar = viewChild('toolbar', { read: ElementRef }) as Signal<ElementRef<HTMLElement> | undefined>;
+  private readonly toolbarActions = viewChild('toolbarActions', { read: ElementRef }) as Signal<
+    ElementRef<HTMLElement> | undefined
+  >;
+  private readonly titleText = viewChild<ElementRef<HTMLElement>>('titleText');
+  private expandedActionsWidth = 0;
+
+  private measureToolbar() {
+    const text = this.titleText()?.nativeElement;
+    const actions = this.toolbarActions()?.nativeElement;
+    const title = text?.parentElement;
+    const available = title?.clientWidth ?? 0;
+    const actionsWidth = actions?.offsetWidth ?? 0;
+    if (!text || !title || !available || !actionsWidth) return;
+    const preview = text.querySelector('app-message-preview');
+    const naturalText = Math.max(text.offsetWidth, text.scrollWidth, preview?.scrollWidth ?? 0);
+    const avatar = title.firstElementChild as HTMLElement;
+    const gap = parseFloat(getComputedStyle(title).columnGap) || 0;
+    const natural = avatar.offsetWidth + gap + naturalText;
+    const expanded = this.compactToolbar() ? available - this.expandedActionsWidth + actionsWidth : available;
+    if (!this.compactToolbar()) this.expandedActionsWidth = actionsWidth;
+    this.compactToolbar.set(this.compactToolbar() ? natural + 1 > expanded : natural > expanded);
+  }
+  protected readonly muteBusy = linkedSignal({ source: () => this.entryKey(), computation: () => false });
+  protected readonly muted = computed(() => this.chatInfo.isMuted(this.id()));
+  private readonly muteMenu = viewChild.required(ChatMute);
+  private readonly muteError = viewChild.required<IonToast>('muteError');
+  protected async toggleMute() {
+    if (this.muteBusy()) return;
+    const entry = this.entryKey();
+    this.muteBusy.set(true);
+    try {
+      await this.muteMenu().toggle(this.id());
+    } catch {
+      if (entry === this.entryKey()) await this.muteError().present();
+    } finally {
+      if (entry === this.entryKey()) this.muteBusy.set(false);
+    }
+  }
+  private readonly editTarget = linkedSignal<MessageResponse | OutgoingMessage | undefined>(() => {
+    this.entryKey();
+    return undefined;
+  });
+  protected readonly editing = computed(() => {
+    const target = this.editTarget();
+    return target && ('delivery' in target ? untracked(target.message) : target);
+  });
+  protected readonly editingUploads = computed(() => {
+    const target = this.editTarget();
+    return target && 'delivery' in target ? untracked(() => target.uploads) : [];
+  });
+  protected startEdit(message: MessageResponse | OutgoingMessage) {
+    const content = 'delivery' in message ? message.message() : message;
+    if (
+      !this.chatInfo.canSpeak(this.id(), content.replyRootId ? SpeakingAction.ThreadReply : SpeakingAction.ChatMessage)
+    )
+      return;
+    this.cancelForward();
+    this.editTarget.set(message);
+    this.editText.set(this.editing()?.message ?? '');
+    void this.composer()?.setFocus();
+  }
+  protected editLastMessage() {
+    const row = [...this.rows()]
+      .reverse()
+      .find(
+        (row) =>
+          row.message.sender.uid === this.session.user()?.uid &&
+          !row.message.isDeleted &&
+          row.message.messageType === MessageType.text &&
+          !row.message.forwardedFrom &&
+          !row.outgoing?.forwarding,
+      );
+    const message = row?.outgoing ?? row?.confirmed;
+    if (message) this.startEdit(message);
+  }
+  protected escapeComposer() {
+    if (this.pendingForward()) this.cancelForward();
+    else if (this.editing()) {
+      if (this.editText() === (this.editing()?.message ?? '')) this.cancelEdit();
+    } else if (this.replyTo() || this.savedReplyId()) this.cancelReply();
+    // Blur so the next Esc reaches the page-level navigation handler.
+    else this.composer()?.blur();
+  }
+  protected cancelEdit() {
+    this.editTarget.set(undefined);
+    this.editText.set('');
+  }
+  protected readonly PageDirection = PageDirection;
+  protected readonly ConversationTargetKind = ConversationTargetKind;
+  protected readonly ConversationError = ConversationError;
+  protected readonly ThreadError = ThreadError;
+  protected readonly session = inject(SessionStore);
+  protected readonly preferences = inject(Preferences);
+  protected readonly conversation = inject(ConversationStore);
+  private readonly chatInfo = inject(ChatStore);
+  private readonly router = inject(Router);
+  private readonly drafts = inject(DraftStore);
+  protected readonly pendingForward = computed(() => this.drafts.forward(this.id(), this.threadId()));
+  protected readonly forwardPreview = computed(() => this.pendingForward()?.[0]);
+  protected readonly forwardParticipants = computed(() => {
+    const messages = [...(this.pendingForward() ?? [])].sort((a, b) => a.id - b.id);
+    return [...new Map(messages.map((message) => [message.sender.uid, message.sender])).values()];
+  });
+  protected readonly outbox = inject(MessageOutbox);
+  private readonly messageActions = inject(MessageActions);
+  private selectionVersion = 0;
+  protected readonly selectionIcons = {
+    cancel: closeOutline,
+    forward: arrowRedoOutline,
+    returnForward: returnUpForwardOutline,
+    returnBack: returnDownBackOutline,
+    recall: trashOutline,
+  };
+  protected readonly recalling = signal(false);
+  protected readonly pendingRecall = signal<readonly SelectedMessage[] | undefined>(undefined);
+  protected readonly recallResult = signal<{ succeeded: number; failed: number } | undefined>(undefined);
+  protected readonly canRecallSelection = computed(
+    () =>
+      this.selectedMessages().size > 0 &&
+      [...this.selectedMessages().values()].every((message) => this.canRecallSelectedMessage(message)),
+  );
+  protected readonly selecting = signal(false);
+  protected readonly selectedMessages = signal<ReadonlyMap<SnowflakeID | string, SelectedMessage>>(new Map());
+  protected readonly forwardSources = signal<readonly SelectedMessage[]>([]);
+  protected readonly topicForwardOpen = signal(false);
+  protected readonly forwardMove = linkedSignal({
+    source: () => this.entryKey(),
+    computation: (): (ForwardDraftLocation & { messages: readonly MessageResponse[] }) | undefined => undefined,
+  });
+  protected readonly selectionLimit = MAX_FORWARD_MESSAGES;
+  protected readonly canSelect = (source: SelectedMessage) => {
+    const message = forwardSourceMessage(source);
+    return !!message && canSelect(message);
+  };
+  protected readonly forwardError = signal<ForwardSelectionError | undefined>(undefined);
+  private selectionKey(message: SelectedMessage) {
+    return 'delivery' in message || this.selectedMessages().has(message.clientGeneratedId)
+      ? message.clientGeneratedId
+      : message.id;
+  }
+  protected isSelected(id: SnowflakeID | undefined, clientGeneratedId: string) {
+    return this.selectedMessages().has(clientGeneratedId) || (id != null && this.selectedMessages().has(id));
+  }
+  protected beginSelection(message: SelectedMessage) {
+    if (!this.canSelect(message)) return;
+    this.selectionVersion++;
+    this.recallResult.set(undefined);
+    this.selecting.set(true);
+    this.forwardError.set(undefined);
+    const key = 'delivery' in message ? message.clientGeneratedId : message.id;
+    this.selectedMessages.set(new Map([[key, message]]));
+  }
+  protected toggleSelection(message: SelectedMessage) {
+    if (this.recalling() || !this.canSelect(message)) return;
+    this.forwardError.set(undefined);
+    const key = this.selectionKey(message);
+    this.selectedMessages.update((selected) => {
+      const next = new Map(selected);
+      if (next.has(key)) next.delete(key);
+      else if (next.size < MAX_FORWARD_MESSAGES) next.set(key, message);
+      return next;
+    });
+  }
+  protected cancelSelection() {
+    this.selectionVersion++;
+    this.recalling.set(false);
+    this.pendingRecall.set(undefined);
+    this.recallResult.set(undefined);
+    this.selecting.set(false);
+    this.forwardError.set(undefined);
+    this.selectedMessages.set(new Map());
+  }
+  protected forwardSelection() {
+    if (this.recalling() || !this.selectedMessages().size) return;
+    this.forwardError.set(undefined);
+    const sources = [...this.selectedMessages().values()];
+    if (
+      sources.some((source) => {
+        const message = forwardSourceMessage(source);
+        return !message || !canForward(message);
+      })
+    ) {
+      this.forwardError.set(ForwardSelectionError.Unavailable);
+      return;
+    }
+    this.forwardSources.set(sources);
+  }
+
+  private canRecallSelectedMessage(selected: SelectedMessage) {
+    const message = 'delivery' in selected ? selected.message() : selected;
+    const chat = this.chatInfo.get(this.id());
+    return (
+      !message.isDeleted &&
+      !(chat?.kind === GroupKind.dm && this.relationship()?.canDm === false) &&
+      (chat?.myRole === GroupRole.admin || message.sender.uid === this.session.user()?.uid)
+    );
+  }
+  protected recallSelection() {
+    if (!this.recalling() && this.canRecallSelection()) this.pendingRecall.set([...this.selectedMessages().values()]);
+  }
+  protected async confirmRecallSelection(event: CustomEvent<{ role?: string }>) {
+    const messages = this.pendingRecall();
+    this.pendingRecall.set(undefined);
+    if (event.detail.role !== 'confirm' || !messages || this.recalling()) return;
+    const version = this.selectionVersion;
+    const entry = this.entryKey();
+    const current = () => !this.destroyRef.destroyed && version === this.selectionVersion && entry === this.entryKey();
+    this.recalling.set(true);
+    this.recallResult.set(undefined);
+    let succeeded = 0;
+    let failed = 0;
+    const ready: { key: SnowflakeID | string; message: MessageResponse }[] = [];
+    for (const message of messages) {
+      if (!current()) return;
+      const key = this.selectionKey(message);
+      if (!this.selectedMessages().has(key)) continue;
+      if (!this.canRecallSelectedMessage(message)) {
+        failed++;
+        continue;
+      }
+      try {
+        const published = 'delivery' in message ? await this.outbox.waitForPublication(message) : message;
+        if (!current()) return;
+        if (!this.selectedMessages().has(key)) continue;
+        ready.push({ key, message: published });
+      } catch {
+        if (!current()) return;
+        failed++;
+      }
+    }
+    if (!current()) return;
+    // Publication waits may have allowed remote deletions or permission changes.
+    const batch = ready.filter(({ key, message }) => {
+      if (!this.selectedMessages().has(key)) return false;
+      if (this.canRecallSelectedMessage(message)) return true;
+      failed++;
+      return false;
+    });
+    if (batch.length) {
+      try {
+        const result = await this.messageActions.recallMany(
+          entry.chatId,
+          batch.map(({ message }) => message.id),
+        );
+        if (!current()) return;
+        const deleted = new Set(result.messageIds);
+        succeeded = batch.filter(({ message }) => deleted.has(message.id)).length;
+        failed += batch.length - succeeded;
+        this.selectedMessages.update((selected) => {
+          const next = new Map(selected);
+          for (const { key, message } of batch) if (deleted.has(message.id)) next.delete(key);
+          return next;
+        });
+      } catch {
+        if (!current()) return;
+        failed += batch.length;
+      }
+    }
+    this.recalling.set(false);
+    if (!this.selectedMessages().size) this.cancelSelection();
+    this.recallResult.set({ succeeded, failed });
+  }
+
+  private readonly destroyRef = inject(DestroyRef);
+  private readonly changeDetector = inject(ChangeDetectorRef);
+  private readonly api = inject(RpcApi);
+  protected readonly realtime = inject(Connection);
+  private readonly navigation = inject(ConversationNavigation);
+  protected readonly document = inject(DOCUMENT);
+  private readonly hostElement = inject(ElementRef<HTMLElement>);
+  private readonly composerFooter = viewChild.required('composerFooter', { read: ElementRef<HTMLElement> });
+  private readonly content = viewChild(IonContent);
+  private readonly messageContent = viewChild.required<ElementRef<HTMLElement>>('messageContent');
+  protected readonly composer = viewChild(MessageComposer);
+  private readonly unreadSeparator = viewChild<ElementRef<HTMLElement>>('unreadSeparator');
+  protected readonly menu = viewChild(MessageMenu);
+  private readonly messages = viewChildren(Message);
+  private readonly messageElements = viewChildren(Message, { read: ElementRef<HTMLElement> });
+  readonly id = input.required<SnowflakeID, string>({ transform: encodeId });
+  readonly threadId = input<SnowflakeID | undefined, string | undefined>(undefined, {
+    transform: (id) => (id ? encodeId(id) : undefined),
+  });
+  readonly queryMessage = input<SnowflakeID | undefined, string | undefined>(undefined, {
+    alias: 'message',
+    transform: parseMessageId,
+  });
+  private readonly fragment = toSignal(inject(ActivatedRoute).fragment);
+  readonly message = computed(
+    () => parseMessageId(new URLSearchParams(this.fragment() ?? '').get('msg')) ?? this.queryMessage(),
+  );
+  readonly reply = input<SnowflakeID | undefined, string | undefined>(undefined, {
+    transform: parseMessageId,
+  });
+  private readonly entryVersion = signal(0);
+  private readonly entryKey = computed(() => ({
+    chatId: this.id(),
+    threadId: this.threadId(),
+    version: this.entryVersion(),
+  }));
+  protected readonly accessible = computed(() => this.chatInfo.isAccessible(this.id(), this.threadId()));
+  protected readonly chatTitle = computed(() => {
+    const chat = this.chatInfo.get(this.id());
+    const isDm = chat?.kind === GroupKind.dm;
+    return {
+      name: isDm ? chat.peer?.username : chat?.name,
+      isDm,
+      avatar: conversationAvatar(chat, this.threadRoot(), !!this.threadId()),
+    };
+  });
+  protected readonly showMessageDetails = computed(
+    () => this.chatInfo.get(this.id())?.kind !== GroupKind.dm || this.preferences.showDmDetails(),
+  );
+  protected readonly mentionsEnabled = computed(() => this.chatInfo.get(this.id())?.kind === GroupKind.group);
+  protected readonly stickyAvatarsEnabled = computed(
+    () => !this.selecting() && this.showMessageDetails() && !this.preferences.showAllAvatars(),
+  );
+  private readonly loadedThreadRoot = linkedSignal({
+    source: this.entryKey,
+    computation: (): MessageResponse | undefined => undefined,
+  });
+  private threadRootUpdate?: ThreadUpdatePayload;
+  private threadRootVersion = 0;
+  protected readonly threadRoot = computed(() => {
+    if (!this.accessible()) return undefined;
+    const rootId = this.threadId();
+    return rootId
+      ? (this.conversation.items().find((message) => message.id === rootId) ??
+          this.chatInfo.threadSummary(rootId)?.threadRootMessage ??
+          this.loadedThreadRoot())
+      : undefined;
+  });
+  /** Root plus replies; a root without threadInfo has no live replies. */
+  private readonly topicMessageCount = computed(() => {
+    if (!this.accessible()) return undefined;
+    const rootId = this.threadId();
+    if (!rootId) return undefined;
+    const root = this.threadRoot();
+    if (root && 'threadInfo' in root) return (root.threadInfo?.replyCount ?? 0) + 1;
+    const replies = this.chatInfo.threadSummary(rootId)?.replyCount;
+    if (replies != null) return replies + 1;
+    return root ? 1 : undefined;
+  });
+  protected readonly canSendMessage = computed(() => {
+    if (!this.accessible()) return false;
+    const threadId = this.threadId();
+    const root = this.threadRoot();
+    const existing =
+      root && 'threadInfo' in root
+        ? !!root.threadInfo
+        : !!(threadId && this.chatInfo.threadSummary(threadId)?.replyCount);
+    return this.chatInfo.canSpeak(
+      this.id(),
+      !threadId ? SpeakingAction.ChatMessage : existing ? SpeakingAction.ThreadReply : SpeakingAction.CreateThread,
+    );
+  });
+  protected readonly speakingRestriction = computed(() => {
+    const editing = !this.pendingForward() && this.editing();
+    const allowed = editing
+      ? this.chatInfo.canSpeak(this.id(), editing.replyRootId ? SpeakingAction.ThreadReply : SpeakingAction.ChatMessage)
+      : this.canSendMessage();
+    return allowed ? undefined : this.chatInfo.speakingMode(this.id());
+  });
+  protected readonly canForwardTopic = computed(() => {
+    const count = this.topicMessageCount();
+    return count != null && count <= MAX_FORWARD_MESSAGES;
+  });
+  protected openTopicForward() {
+    if (this.canForwardTopic()) this.topicForwardOpen.set(true);
+  }
+  /** Read the topic again when a target is chosen so the merge uses every forwardable message present then. */
+  protected readonly loadTopicSources = async (): Promise<ForwardSourcesResult> => {
+    const threadId = this.threadId();
+    if (!threadId) return { error: ForwardSelectionError.TopicUnavailable };
+    try {
+      const page = await firstValueFrom(
+        this.api.messages
+          .list({ chatId: this.id(), threadId, max: MAX_FORWARD_MESSAGES })
+          .pipe(takeUntilDestroyed(this.destroyRef)),
+      );
+      return page.olderCursor
+        ? { error: ForwardSelectionError.TooMany }
+        : { sources: page.messages.filter((message) => this.canSelect(message)) };
+    } catch {
+      return { error: ForwardSelectionError.LoadFailed };
+    }
+  };
+  private async loadThreadRoot() {
+    const entry = this.entryKey();
+    if (!entry.threadId || !this.accessible() || this.threadRoot()) return;
+    const previousUpdate = this.threadRootUpdate;
+    const version = this.threadRootVersion;
+    try {
+      const root = await firstValueFrom(
+        this.api.messages
+          .get({ chatId: entry.chatId, messageId: entry.threadId })
+          .pipe(takeUntilDestroyed(this.destroyRef)),
+      );
+      if (
+        version === this.threadRootVersion &&
+        this.isCurrent(entry) &&
+        this.accessible() &&
+        !this.loadedThreadRoot()
+      ) {
+        const update = this.threadRootUpdate;
+        this.loadedThreadRoot.set(
+          update && update !== previousUpdate
+            ? { ...root, threadInfo: update.replyCount > 0 ? { replyCount: update.replyCount } : undefined }
+            : root,
+        );
+      }
+    } catch {
+      /* The conversation can remain usable when the root is unavailable. */
+    }
+  }
+  private readonly location = inject(Location);
+  private readonly nav = inject(NavController);
+  private readonly outlet = inject(IonRouterOutlet, { optional: true });
+  /** A thread opened from the chat list has no parent conversation behind it. */
+  private readonly fromChatList = linkedSignal({
+    source: this.entryKey,
+    computation: () => !!(this.location.getState() as { fromChatList?: boolean } | null)?.fromChatList,
+  });
+  protected readonly showBackToChat = computed(() => !!this.threadId() && !this.fromChatList());
+
+  /** Mobile follows real history, matching the browser's back gesture. */
+  protected back() {
+    if (this.selecting()) {
+      this.cancelSelection();
+      return;
+    }
+    if (this.outlet?.canGoBack()) {
+      void this.nav.back();
+    } else {
+      void this.nav.navigateBack(this.threadId() ? ['/chats/chat', decodeId(this.id())] : ['/chats'], {
+        replaceUrl: true,
+      });
+    }
+  }
+
+  /** Desktop has no browser-style back button; mirror the Escape shortcut's return-to-chat. */
+  protected backToChat() {
+    const threadId = this.threadId();
+    if (!threadId) return;
+    void this.router.navigate(['/chats/chat', decodeId(this.id())], {
+      replaceUrl: true,
+      fragment: `msg=${decodeId(threadId)}`,
+    });
+  }
+  protected readonly subscription = computed(() => {
+    const threadId = this.threadId();
+    return threadId ? this.chatInfo.subscription(this.id(), threadId) : undefined;
+  });
+  protected readonly threadLoading = linkedSignal({ source: this.entryKey, computation: () => false });
+  protected readonly threadUpdating = linkedSignal({ source: this.entryKey, computation: () => false });
+  /** The button renders before the subscription status arrives, assuming an unsubscribed thread. */
+  protected readonly threadAction = computed(() => {
+    if (!this.threadId()) return undefined;
+    const status = this.subscription();
+    if (!status?.subscribed)
+      return {
+        kind: ThreadActionKind.Subscribe,
+        icon: notificationsOutline,
+        label: 'conversation.actions.subscribeThread',
+      };
+    return status.archived
+      ? { kind: ThreadActionKind.Unarchive, icon: archive, label: 'conversation.actions.unarchiveThread' }
+      : { kind: ThreadActionKind.Archive, icon: archiveOutline, label: 'conversation.actions.archiveThread' };
+  });
+  protected readonly threadError = linkedSignal({
+    source: this.entryKey,
+    computation: (): ThreadError | undefined => undefined,
+  });
+  private readonly receiptScope = computed(() => {
+    const chat = this.chatInfo.get(this.id());
+    const uid = this.session.user()?.uid;
+    if (chat?.kind !== GroupKind.dm || uid == null) return undefined;
+    return { chatId: this.id(), threadId: this.threadId(), uid };
+  });
+  private readonly receiptScopeKey = computed(() => {
+    const scope = this.receiptScope();
+    return scope && `${scope.chatId}:${scope.threadId ?? ''}:${scope.uid}`;
+  });
+  private readonly readReceiptId = linkedSignal({
+    source: this.receiptScopeKey,
+    computation: (): SnowflakeID | undefined => undefined,
+  });
+  private readonly rootReadReceiptId = linkedSignal({
+    source: this.receiptScopeKey,
+    computation: (): SnowflakeID | undefined => undefined,
+  });
+  private readonly receiptFresh = linkedSignal({ source: this.receiptScopeKey, computation: () => 0 });
+  private receiptRequestVersion = 0;
+  private receiptRequest?: { key: string; again: number };
+  protected readonly isReadByPeer = (message: MessageContent) => {
+    const threadId = this.threadId();
+    const receipt =
+      threadId && message.id === threadId && message.replyRootId == null
+        ? this.rootReadReceiptId()
+        : (message.replyRootId ?? undefined) === threadId
+          ? this.readReceiptId()
+          : undefined;
+    return !!receipt && !!message.id && message.id <= receipt;
+  };
+  private async refreshReadReceipt(clear = false, changed = false, mask = 3) {
+    const scope = this.receiptScope();
+    const key = this.receiptScopeKey();
+    if (!clear && key && this.receiptRequest?.key === key) {
+      if (changed) this.receiptRequest.again |= mask;
+      return;
+    }
+    const version = ++this.receiptRequestVersion;
+    if (clear) {
+      this.readReceiptId.set(undefined);
+      this.rootReadReceiptId.set(undefined);
+    }
+    if (!scope || !this.active() || !key) return;
+    const request = { key, again: mask };
+    this.receiptRequest = request;
+    try {
+      do {
+        const requested = request.again;
+        request.again = 0;
+        this.receiptFresh.update((fresh) => fresh & ~requested);
+        const listVersion = this.chatInfo.snapshot();
+        const receipts = await firstValueFrom(
+          forkJoin({
+            scope:
+              requested & 1
+                ? this.api.chats.getReadReceipt({
+                    chatId: scope.chatId,
+                    ...(scope.threadId ? { threadId: scope.threadId } : {}),
+                  })
+                : of(undefined),
+            root:
+              requested & 2 && scope.threadId ? this.api.chats.getReadReceipt({ chatId: scope.chatId }) : of(undefined),
+          }).pipe(takeUntilDestroyed(this.destroyRef)),
+        );
+        const current = this.receiptScope();
+        if (
+          version === this.receiptRequestVersion &&
+          current &&
+          current.chatId === scope.chatId &&
+          current.threadId === scope.threadId &&
+          current.uid === scope.uid &&
+          this.active() &&
+          !this.destroyRef.destroyed
+        ) {
+          if (receipts.scope) {
+            this.readReceiptId.set(receipts.scope.lastReadMessageId);
+            this.chatInfo.acceptPeerRead(scope.chatId, scope.threadId, receipts.scope.lastReadMessageId, listVersion);
+          }
+          if (receipts.root) {
+            this.rootReadReceiptId.set(receipts.root.lastReadMessageId);
+            this.chatInfo.acceptPeerRead(scope.chatId, undefined, receipts.root.lastReadMessageId, listVersion);
+          }
+          this.receiptFresh.update((fresh) => fresh | requested);
+        }
+      } while (request.again && this.receiptRequest === request && this.active() && key === this.receiptScopeKey());
+    } catch {
+      // A failed refresh preserves a known authorized receipt; a privacy invalidation already cleared it.
+    } finally {
+      if (this.receiptRequest === request) this.receiptRequest = undefined;
+    }
+  }
+  private invalidateReadReceipt(privacyChanged = false) {
+    void this.refreshReadReceipt(privacyChanged);
+  }
+  protected readonly outgoing = computed(() => this.outbox.items().filter((item) => item.chatId === this.id()));
+  protected readonly hideMembershipMessages = computed(
+    // Membership actions belong to groups; do not flash them while metadata is still loading.
+    () =>
+      !this.threadId() &&
+      this.chatInfo.get(this.id())?.kind !== GroupKind.dm &&
+      (!this.preferences.showMembershipMessages() || this.chatInfo.membershipPolicy(this.id())?.canView === false),
+  );
+  protected readonly rows = computed(() => {
+    if (!this.accessible()) return [];
+    const messages = this.conversation.items();
+    const hideMembershipMessages = this.hideMembershipMessages();
+    const known = new Set(messages.map((message) => message.clientGeneratedId));
+    const entries: { key: string; message: MessageContent; confirmed?: MessageResponse; outgoing?: OutgoingMessage }[] =
+      [];
+    for (const message of messages) {
+      if (!isVisibleMessage(message) || (hideMembershipMessages && isMembershipMessage(message))) continue;
+      const outgoing = this.outgoing().find(
+        (item) => item.editId === message.id || item.clientGeneratedId === message.clientGeneratedId,
+      );
+      if (outgoing?.cancelled()) continue;
+      const preview = outgoing?.message();
+      entries.push({
+        key: message.clientGeneratedId || decodeId(message.id),
+        message: preview
+          ? {
+              ...message,
+              message: preview.message,
+              attachments: preview.attachments,
+              mentions: preview.mentions,
+              isEdited: preview.isEdited,
+            }
+          : message,
+        confirmed: message,
+        outgoing,
+      });
+    }
+    for (const outgoing of this.outgoing()) {
+      if (
+        outgoing.editId ||
+        outgoing.cancelled() ||
+        outgoing.threadId !== this.threadId() ||
+        known.has(outgoing.clientGeneratedId)
+      )
+        continue;
+      entries.push({ key: outgoing.clientGeneratedId, message: outgoing.message(), outgoing });
+    }
+    return messageRows(entries.map((entry) => entry.message)).map((row, index) => ({ ...row, ...entries[index] }));
+  });
+  private readonly confirmedElements = computed(() => {
+    const rows = this.rows();
+    return this.messageElements().filter((_, index) => !!rows[index]?.confirmed);
+  });
+  /** Message node by id; messageElements stays index-aligned with messages. */
+  private messageElement(messageId: SnowflakeID) {
+    const index = this.messages().findIndex((message) => message.message().id === messageId);
+    return this.messageElements()[index]?.nativeElement;
+  }
+  protected readonly peerUid = computed(() => this.chatInfo.get(this.id())?.peer?.uid);
+  protected readonly relationship = computed(() => {
+    const uid = this.peerUid();
+    return uid ? this.chatInfo.relationship(uid).value() : undefined;
+  });
+  protected readonly scrolling = scrollActivity();
+  private readonly floatingDate = viewChild.required<ElementRef<HTMLElement>>('floatingDate');
+  private readonly dateSeparators = viewChildren<ElementRef<HTMLElement>>('dateSeparator');
+  protected readonly dateColliding = signal(false);
+  protected readonly hiddenDateKey = signal<string | number | undefined>(undefined);
+  protected readonly visibleDate = signal<string | undefined>(undefined);
+  protected readonly active = signal(false);
+  private entered = false;
+  private navigationVersion = 0;
+  private subscriptionVersion = 0;
+  private retryAction = () => {};
+  private readonly position = signal<ScrollPosition | undefined>(undefined);
+  private membershipScrollPosition?: ScrollPosition;
+  private readonly entryReadId = signal<SnowflakeID | undefined>(undefined);
+  private firstUnreadAfter(boundary?: SnowflakeID) {
+    if (!boundary) return undefined;
+    const uid = this.session.user()?.uid;
+    return this.rows().find(
+      ({ confirmed }) => confirmed && !confirmed.isDeleted && confirmed.id > boundary && confirmed.sender.uid !== uid,
+    )?.confirmed?.id;
+  }
+  /** Divider on screen: the read position captured on entry, so it does not follow reading progress. */
+  protected readonly firstUnreadId = computed(() => this.firstUnreadAfter(this.entryReadId()));
+  /** Live unread start: the first unread after the shared read state's current boundary. */
+  private readonly unreadStartId = computed(() =>
+    this.firstUnreadAfter(this.chatInfo.unreadBoundary(this.id(), this.threadId())),
+  );
+  private readonly positioned = linkedSignal({ source: this.entryKey, computation: () => false });
+  protected readonly atBottom = signal(true);
+  private readonly returnMessageIds = linkedSignal({
+    source: this.entryKey,
+    computation: (): SnowflakeID[] => [],
+  });
+  protected readonly showDownButton = computed(
+    () =>
+      this.positioned() &&
+      (!this.atBottom() || !!this.conversation.page()?.newerCursor) &&
+      !this.composer()?.voiceActive(),
+  );
+  protected readonly navigatingDown = linkedSignal({ source: this.entryKey, computation: () => false });
+  protected readonly unreadCount = computed(() => this.chatInfo.unreadCount(this.id(), this.threadId()));
+  protected readonly reactionIcon = heartOutline;
+  protected readonly reactionJumpIds = signal<SnowflakeID[]>([]);
+  protected readonly reactionRemaining = computed(() => this.reactionJumpIds().length);
+  protected readonly canJumpReaction = computed(() => this.active() && this.reactionRemaining() > 0);
+  protected readonly mentionIcon = at;
+  protected readonly mentionJumpIds = signal<SnowflakeID[]>([]);
+  protected readonly mentionRemaining = computed(() => this.mentionJumpIds().length);
+  protected readonly canJumpMention = computed(
+    () => this.active() && this.mentionsEnabled() && this.mentionRemaining() > 0,
+  );
+  private readonly stateWatchVisible = signal(!document.hidden);
+  private reactionSessionEntered = false;
+  private reactionRequest?: { again: boolean; readThrough?: SnowflakeID };
+  private reactionFresh = false;
+  private reactionChanged = false;
+  private mentionRequest?: { cancel: Subject<void>; promise: Promise<void> };
+  private mentionDirty = true;
+  private mentionChanged = false;
+  private readonly dismissedMentions = new Set<SnowflakeID>();
+  private readonly playback = inject(VoicePlayback);
+  protected readonly savedReplyId = linkedSignal({
+    source: this.entryVersion,
+    computation: (): SnowflakeID | undefined => undefined,
+  });
+  // Route cleanup saves the previous input before activate advances entryVersion.
+  protected readonly draft = linkedSignal({ source: this.entryVersion, computation: () => '' });
+  protected readonly editText = linkedSignal({ source: this.entryVersion, computation: () => '' });
+  protected readonly replyTo = linkedSignal({
+    source: this.entryVersion,
+    computation: (): MessageResponse | undefined => undefined,
+  });
+  protected readonly composerContextColors = computed(() => {
+    if (this.pendingForward()) return undefined;
+    const sender = this.editing()?.sender ?? this.replyTo()?.sender;
+    return sender ? userColors(sender.name ?? String(sender.uid)) : undefined;
+  });
+  protected readonly editContextIcon = createOutline;
+  protected readonly replyContextIcon = arrowUndoOutline;
+  protected readonly closeIcon = closeCircleOutline;
+  protected readonly downIcon = chevronDown;
+  protected readonly upIcon = chevronUpOutline;
+  protected readonly listIcon = listOutline;
+  protected readonly pins = computed(() => this.chatInfo.pins(this.id(), this.threadId()));
+  protected readonly visiblePins = linkedSignal({
+    source: () => ({
+      entry: this.entryKey(),
+      accessible: this.accessible(),
+      idle: this.scrolling.idle(),
+      pins: this.pins()
+        .items()
+        .filter((pin) => isVisibleMessage(pin.message))
+        .sort((a, b) => b.message.id - a.message.id),
+    }),
+    computation: ({ entry, accessible, idle, pins }, previous): PinResponse[] =>
+      // Revocation takes precedence over the scroll-time visibility deferral.
+      !accessible
+        ? []
+        : !previous || entry !== previous.source.entry || idle || !!pins.length === !!previous.value.length
+          ? pins
+          : previous.value,
+  });
+  protected readonly selectedPinId = linkedSignal({
+    source: this.visiblePins,
+    computation: (pins, previous): SnowflakeID | undefined =>
+      pins.find((pin) => pin.id === previous?.value)?.id ?? pins[0]?.id,
+  });
+  protected readonly selectedPin = computed(() => this.visiblePins().find((pin) => pin.id === this.selectedPinId()));
+  protected readonly selectedPinIndex = computed(() =>
+    this.visiblePins().findIndex((pin) => pin.id === this.selectedPinId()),
+  );
+  protected readonly pinsFailed = linkedSignal({ source: this.entryKey, computation: () => false });
+
+  protected async loadPins() {
+    const entry = this.entryKey();
+    try {
+      await this.pins().ensure();
+      if (this.isCurrent(entry)) this.pinsFailed.set(false);
+    } catch {
+      if (this.isCurrent(entry)) this.pinsFailed.set(true);
+    }
+  }
+
+  protected async locatePin() {
+    const pin = this.selectedPin();
+    if (!pin || this.pendingNavigation()) return;
+    const entry = this.entryKey();
+    await this.goTo({ type: ConversationTargetKind.Message, messageId: pin.message.id });
+    if (!this.isCurrent(entry) || this.conversation.error()) return;
+    const pins = this.visiblePins();
+    const index = pins.findIndex((item) => item.id === pin.id);
+    this.selectedPinId.set(pins[(index + 1) % pins.length]?.id);
+  }
+
+  protected readonly pinsHref = computed(
+    () => `/chats/chat/${decodeId(this.id())}${this.threadId() ? `/thread/${decodeId(this.threadId()!)}` : ''}/pins`,
+  );
+
+  constructor() {
+    // Selection is page state: Escape must leave it before the app-level shortcut leaves the chat.
+    const escapeSelection = (event: KeyboardEvent) => {
+      if (
+        event.key !== 'Escape' ||
+        !this.selecting() ||
+        this.panels.paths().length ||
+        this.document.querySelector('ion-modal:not(.overlay-hidden), ion-alert:not(.overlay-hidden)')
+      )
+        return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      this.cancelSelection();
+    };
+    this.document.addEventListener('keydown', escapeSelection, true);
+    this.destroyRef.onDestroy(() => this.document.removeEventListener('keydown', escapeSelection, true));
+    this.chatInfo.receiptPrivacyChanges$.pipe(takeUntilDestroyed()).subscribe((peerUid) => {
+      if (peerUid == null || peerUid === this.peerUid()) this.invalidateReadReceipt(true);
+    });
+    effect((onCleanup) => {
+      const uid = this.peerUid();
+      if (this.active() && uid && uid !== this.session.user()?.uid)
+        onCleanup(this.chatInfo.relationship(uid).activate());
+    });
+    effect(() => {
+      if (!this.receiptScopeKey() || !this.active()) {
+        this.receiptRequestVersion++;
+        return;
+      }
+      untracked(() => this.invalidateReadReceipt());
+    });
+    const resize = () => {
+      this.largeScreen.set(this.wide.matches);
+    };
+    effect(() => {
+      if (this.sidebarOpen()) untracked(() => this.composer()?.closeStickers());
+    });
+    this.wide.addEventListener('change', resize);
+    this.destroyRef.onDestroy(() => this.wide.removeEventListener('change', resize));
+    effect((onCleanup) => {
+      const id = this.id();
+      const threadId = this.threadId();
+      untracked(() => this.activate(id, threadId));
+      onCleanup(() => untracked(() => this.saveDraft({ chatId: id, threadId })));
+    });
+    effect(() => {
+      if (this.active() && this.pendingForward()) {
+        untracked(() => {
+          this.cancelSelection();
+          void this.composer()?.setFocus();
+        });
+      }
+    });
+    effect(() => {
+      const replyId = this.reply();
+      const messageId = replyId ?? this.message();
+      this.entryKey();
+      if (messageId && this.active())
+        untracked(() => void this.goTo({ type: ConversationTargetKind.Message, messageId }, !!replyId));
+    });
+    effect(() => {
+      const { threadId } = this.entryKey();
+      if (this.active() && threadId && !this.subscription()) untracked(() => void this.loadSubscription());
+    });
+    effect((onCleanup) => {
+      if (this.active() && this.stateWatchVisible())
+        onCleanup(this.chatInfo.watchReadStates([{ chatId: this.id(), threadId: this.threadId() }]));
+    });
+    this.chatInfo.changes$.pipe(takeUntilDestroyed()).subscribe(({ kind, chatId, threadId, readThrough }) => {
+      if (
+        kind === ChatChangeKind.Removed &&
+        chatId === this.id() &&
+        (threadId == null || threadId === this.threadId())
+      ) {
+        this.threadRootVersion++;
+        this.threadRootUpdate = undefined;
+        this.loadedThreadRoot.set(undefined);
+        this.navigationVersion++;
+        this.pendingNavigation.set(undefined);
+        this.position.set(undefined);
+      }
+      if (chatId !== this.id() || (threadId ?? undefined) !== (this.threadId() ?? undefined)) return;
+      if (kind === ChatChangeKind.Read) {
+        if (readThrough != null) this.dismissReadThrough(readThrough);
+        return;
+      }
+      if (kind !== ChatChangeKind.Attention) return;
+      this.mentionDirty = true;
+      this.mentionChanged = true;
+      void this.enterMentionSession();
+    });
+    this.realtime.messages$.pipe(takeUntilDestroyed()).subscribe((message) => {
+      if (!this.isCurrent() || !this.conversation.accepts(message)) return;
+      const follow = this.atBottom() && this.conversation.atLatest() && !this.position();
+      this.conversation.receive(message);
+      if (follow) this.position.set({ type: PositionKind.Bottom });
+      else if (!this.threadId()) void this.chatInfo.scheduleReadState(this.id()).catch(() => {});
+    });
+    this.realtime.events$.pipe(takeUntilDestroyed()).subscribe((event) => {
+      if (event.type === ServerWsMessageType.readReceiptChanged && event.payload.chatId === this.id()) {
+        const { readerUid, threadRootId, privacyChanged } = event.payload;
+        if (privacyChanged || readerUid == null) void this.refreshReadReceipt(privacyChanged === true, true);
+        else if (readerUid !== this.session.user()?.uid) {
+          if ((threadRootId ?? undefined) === this.threadId()) void this.refreshReadReceipt(false, true, 1);
+          else if (!threadRootId && this.threadId()) void this.refreshReadReceipt(false, true, 2);
+        }
+      }
+      if ('chatId' in event.payload && event.payload.chatId === this.id()) {
+        if (
+          event.type === ServerWsMessageType.messageDeleted ||
+          event.type === ServerWsMessageType.messagesBulkDeleted
+        ) {
+          const ids = event.type === ServerWsMessageType.messageDeleted ? [event.payload.id] : event.payload.messageIds;
+          this.selectedMessages.update(
+            (selected) =>
+              new Map(
+                [...selected].filter(([, item]) => {
+                  const message = 'delivery' in item ? item.confirmed() : item;
+                  return !message || !ids.includes(message.id);
+                }),
+              ),
+          );
+        } else if (event.type === ServerWsMessageType.messageUpdated) {
+          const key = this.selectionKey(event.payload);
+          if (this.selectedMessages().has(key))
+            this.selectedMessages.update((selected) => new Map(selected).set(key, event.payload));
+        }
+        if (event.type === ServerWsMessageType.messageDeleted) this.dismissMentions([event.payload.id]);
+        if (event.type === ServerWsMessageType.messagesBulkDeleted) this.dismissMentions(event.payload.messageIds);
+        if (
+          event.type === ServerWsMessageType.notification &&
+          event.payload.notificationType !== NotificationType.reaction &&
+          (event.payload.threadRootId ?? null) === (this.threadId() ?? null)
+        ) {
+          this.mentionDirty = true;
+          this.mentionChanged = true;
+        }
+      }
+      if (
+        event.type === ServerWsMessageType.notification &&
+        event.payload.notificationType === NotificationType.reaction &&
+        event.payload.chatId === this.id() &&
+        (event.payload.threadRootId ?? null) === (this.threadId() ?? null)
+      )
+        this.invalidateReactions();
+      if (
+        this.accessible() &&
+        event.type === ServerWsMessageType.threadUpdate &&
+        event.payload.chatId === this.id() &&
+        event.payload.threadRootId === this.threadId()
+      ) {
+        this.threadRootUpdate = event.payload;
+        const threadInfo = event.payload.replyCount > 0 ? { replyCount: event.payload.replyCount } : undefined;
+        this.loadedThreadRoot.update((root) => root && { ...root, threadInfo });
+      }
+      if (!this.isCurrent() || !this.accessible()) return;
+      if (event.type === ServerWsMessageType.messageUpdated && event.payload.id === this.threadId())
+        this.loadedThreadRoot.set(event.payload);
+      if (
+        event.type === ServerWsMessageType.threadMembershipChanged &&
+        event.payload.chatId === this.id() &&
+        event.payload.threadRootId === this.threadId()
+      ) {
+        void this.loadSubscription();
+      }
+      if (
+        event.type === ServerWsMessageType.notification &&
+        event.payload.chatId === this.id() &&
+        (event.payload.threadRootId ?? null) === (this.threadId() ?? null)
+      ) {
+        if (event.payload.notificationType === NotificationType.reaction) {
+          void this.enterReactionSession();
+        } else {
+          void this.enterMentionSession();
+        }
+      }
+    });
+    this.realtime.resync$.pipe(takeUntilDestroyed()).subscribe((reason) => {
+      if (reason !== ResyncReason.Foreground) {
+        this.invalidateReactions();
+        this.mentionDirty = true;
+        this.mentionChanged = true;
+      }
+      if (this.isCurrent()) {
+        const entry = this.entryKey();
+        void this.enterReactionSession();
+        void this.enterMentionSession();
+        if (reason === ResyncReason.Foreground && this.realtime.connected()) {
+          // Current pages receive messages even while the document is hidden.
+          // Retry failed reads, but do not re-read successful event-backed data.
+          if (this.conversation.error()) void this.conversation.reconnect();
+          void this.loadPins();
+          if (this.threadError()) void this.loadSubscription();
+          const missingReceipts = 3 & ~this.receiptFresh();
+          if (missingReceipts) void this.refreshReadReceipt(false, false, missingReceipts);
+          void this.loadChatInfo()
+            .catch(() => {})
+            .then(() => {
+              if (this.isCurrent(entry)) void this.trackScroll();
+            });
+          return;
+        }
+        void this.conversation.reconnect();
+        void this.loadPins();
+        this.invalidateReadReceipt();
+        void this.refreshConversationMetadata()
+          .catch(() => {})
+          .then(() => {
+            if (this.isCurrent(entry)) void this.trackScroll();
+          });
+      }
+    });
+    this.navigation.requests$.pipe(takeUntilDestroyed()).subscribe(({ chatId, target, threadId }) => {
+      if (this.isCurrent() && chatId === this.id() && threadId === this.threadId()) void this.goTo(target);
+    });
+    effect(() => {
+      const messages = this.conversation.items();
+      untracked(() => this.outbox.release(messages));
+    });
+    effect(() => {
+      if (!this.conversation.atLatest()) return;
+      const messages = this.outgoing()
+        .filter((item) => !item.editId && !item.cancelled() && item.published())
+        .map((item) => item.confirmed()!);
+      untracked(() => {
+        for (const message of messages) this.conversation.receive(message);
+      });
+    });
+    effect(() => {
+      const target = this.editTarget();
+      if (target && 'delivery' in target && target.cancelled()) untracked(() => this.cancelEdit());
+    });
+    afterNextRender(() => void this.observeResize());
+    afterNextRender(() => this.observeComposer());
+    afterNextRender(() => this.observeToolbar());
+    effect(() => {
+      const hide = this.hideMembershipMessages();
+      const active = this.active();
+      const page = this.conversation.page();
+      untracked(() => {
+        if (!active || !page || hide === this.conversation.hideMembershipMessages) return;
+        void this.reloadMembershipVisibility(hide);
+      });
+    });
+    afterRenderEffect(() => {
+      this.chatTitle();
+      this.threadId();
+      this.threadRoot();
+      untracked(() => this.measureToolbar());
+    });
+    afterRenderEffect(() => {
+      this.rows();
+      this.messageElements();
+      this.position();
+      this.panels.covered();
+      if (this.active()) void this.positionAndRead();
+    });
+    effect(() => {
+      if (this.panels.covered()) {
+        // Retain jump targets, but end the visible session and discard its pending snapshot.
+        // A later primary-page exit must not acknowledge reactions received behind the panel.
+        this.reactionSessionEntered = false;
+        this.reactionFresh = false;
+        this.reactionRequest = undefined;
+      } else if (this.entered) untracked(() => void this.enterReactionSession());
+    });
+    this.router.events.pipe(takeUntilDestroyed()).subscribe((event) => {
+      if (
+        event instanceof NavigationSkipped &&
+        event.code === NavigationSkippedCode.IgnoredSameUrlNavigation &&
+        this.isCurrent()
+      ) {
+        // The URL identifies the destination; each repeated click is still a new positioning request.
+        const messageId = this.message();
+        if (messageId) void this.goTo({ type: ConversationTargetKind.Message, messageId });
+      }
+      if (
+        event instanceof NavigationEnd &&
+        !this.active() &&
+        this.conversation.page() &&
+        !this.coveredByPage() &&
+        event.urlAfterRedirects.split(/[?#]/)[0] !== `/chats/chat/${decodeId(this.id())}`
+      ) {
+        this.leave();
+        this.changeDetector.detectChanges();
+      }
+    });
+    this.destroyRef.onDestroy(() => this.leave());
+  }
+
+  private activate(id: SnowflakeID, threadId?: SnowflakeID) {
+    this.membershipScrollPosition = undefined;
+    this.resetReactionSession();
+    this.resetMentionSession();
+    this.scrolling.reset();
+    this.entryVersion.update((version) => version + 1);
+    this.active.set(true);
+    const draft = this.drafts.get(id, threadId);
+    this.draft.set(draft?.text ?? '');
+    this.savedReplyId.set(draft?.replyTo ? encodeId(draft.replyTo) : undefined);
+    if (draft?.replyTo && !this.reply()) void this.restoreReply(encodeId(draft.replyTo));
+    this.conversation.reset(id, threadId);
+    if (this.entered) {
+      void this.enterReactionSession();
+      void this.enterMentionSession();
+    }
+    void this.loadPins();
+    void this.loadThreadRoot();
+    this.entryReadId.set(undefined);
+    this.atBottom.set(false);
+    this.position.set(undefined);
+    void this.loadChatInfo().catch(() => {});
+    if (!this.message() && !this.reply()) void this.goTo({ type: ConversationTargetKind.Resume });
+  }
+
+  ionViewWillEnter() {
+    if (this.active()) return;
+    if (!this.conversation.page()) {
+      this.activate(this.id(), this.threadId());
+      return;
+    }
+    this.active.set(true);
+    void this.conversation.reconnect();
+    void this.loadPins();
+    void this.refreshConversationMetadata().catch(() => {});
+  }
+
+  ionViewDidEnter() {
+    this.entered = true;
+    void this.positionAndRead();
+    void this.enterReactionSession();
+    void this.enterMentionSession();
+  }
+
+  ionViewWillLeave() {
+    this.saveDraft();
+    void this.leaveReactionSession();
+  }
+
+  ionViewDidLeave() {
+    // Topic and detail pages retain the conversation for browser Back.
+    this.leave(this.coveredByPage() && !!this.conversation.page());
+    // Ionic detaches cached pages; apply resource cleanup after the transition.
+    this.changeDetector.detectChanges();
+  }
+
+  private coveredByPage() {
+    return (
+      this.router.routerState.snapshot.root.firstChild?.data['modal'] ||
+      this.router.routerState.snapshot.root.firstChild?.data['preserveConversation'] ||
+      (!this.threadId() && this.router.url.startsWith(`/chats/chat/${decodeId(this.id())}/thread/`))
+    );
+  }
+
+  private isCurrent(entry = this.entryKey()) {
+    const threadId = this.threadId();
+    return (
+      entry === this.entryKey() &&
+      this.active() &&
+      this.router.isActive(`/chats/chat/${decodeId(this.id())}${threadId ? `/thread/${decodeId(threadId)}` : ''}`, {
+        paths: 'exact',
+        queryParams: 'ignored',
+        fragment: 'ignored',
+        matrixParams: 'ignored',
+      })
+    );
+  }
+
+  private leave(retainRange = false) {
+    const data = this.router.routerState.snapshot.root.firstChild?.data;
+    const retainComposer = retainRange && (data?.['modal'] || data?.['preserveConversation']);
+    this.saveDraft();
+    this.scrolling.reset();
+    this.active.set(false);
+    this.entered = false;
+    this.navigationVersion++;
+    this.position.set(undefined);
+    this.resetReactionSession();
+    this.resetMentionSession(retainRange);
+    if (retainRange) {
+      this.conversation.cancelLoading();
+      if (!retainComposer) this.cancelEdit();
+      this.playback.pause();
+    } else {
+      this.membershipScrollPosition = undefined;
+      this.entryVersion.update((version) => version + 1);
+      this.conversation.reset();
+      this.rows();
+      this.draft.set('');
+      this.replyTo.set(undefined);
+    }
+    this.cancelSelection();
+    this.forwardSources.set([]);
+    this.topicForwardOpen.set(false);
+    this.menu()?.reset();
+    if (!retainComposer) this.composer()?.reset();
+  }
+
+  protected readonly pendingNavigation = linkedSignal({
+    source: this.entryKey,
+    computation: (): ConversationTarget | undefined => undefined,
+  });
+  protected readonly jumpingTo = computed(() => {
+    const target = this.pendingNavigation();
+    return target?.type === ConversationTargetKind.Message ? target.messageId : undefined;
+  });
+
+  protected async goTo(target: ConversationTarget, replying = false, fromId?: SnowflakeID) {
+    const entry = this.entryKey();
+    const version = ++this.navigationVersion;
+    this.pendingNavigation.set(target);
+    try {
+      this.retryAction = () => void this.goTo(target, replying, fromId);
+      this.position.set(undefined);
+      let around: SnowflakeID | undefined;
+      if (target.type === ConversationTargetKind.Resume) {
+        const { chatId, threadId } = entry;
+        if (threadId) {
+          const read =
+            this.chatInfo.threadReadState(chatId, threadId) ??
+            (await firstValueFrom(
+              this.api.threads
+                .getReadState({ chatId, threadRootId: threadId })
+                .pipe(takeUntilDestroyed(this.destroyRef)),
+            ).catch(() => undefined));
+          around = read?.lastReadMessageId ?? threadId;
+        } else {
+          const read =
+            this.chatInfo.cachedReadState(chatId) ?? (await this.chatInfo.getReadState(chatId).catch(() => undefined));
+          around = read?.unreadCount ? read.lastReadMessageId : undefined;
+        }
+        if (entry !== this.entryKey() || version !== this.navigationVersion) return;
+        this.entryReadId.set(around);
+      } else if (target.type === ConversationTargetKind.Message) {
+        around = target.messageId;
+      }
+      const loaded = await this.conversation.open(
+        around,
+        target.type === ConversationTargetKind.Message,
+        this.hideMembershipMessages(),
+      );
+      if (!loaded || entry !== this.entryKey() || version !== this.navigationVersion) return;
+      if (target.type === ConversationTargetKind.Latest) this.returnMessageIds.set([]);
+      else if (target.type === ConversationTargetKind.Message && fromId && fromId > target.messageId) {
+        this.returnMessageIds.update((ids) => (ids.at(-1) === fromId ? ids : [...ids, fromId]));
+      }
+      const messageId =
+        target.type === ConversationTargetKind.Message
+          ? target.messageId
+          : target.type === ConversationTargetKind.Resume
+            ? this.firstUnreadId()
+            : undefined;
+      let positionMessageId = messageId;
+      const targetMessage = this.conversation.items().find((message) => message.id === messageId);
+      if (targetMessage && this.hideMembershipMessages() && isMembershipMessage(targetMessage)) {
+        const visible = this.rows().filter((row) => row.confirmed);
+        positionMessageId =
+          visible.find((row) => row.confirmed!.id > targetMessage.id)?.confirmed?.id ?? visible.at(-1)?.confirmed?.id;
+      }
+      this.position.set(
+        positionMessageId
+          ? target.type === ConversationTargetKind.Message
+            ? { type: PositionKind.Message, messageId: positionMessageId }
+            : { type: PositionKind.Unread }
+          : { type: PositionKind.Bottom },
+      );
+      if (replying && messageId) {
+        const message = this.conversation.items().find((item) => item.id === messageId);
+        if (message) this.startReply(message);
+      }
+      return true;
+    } finally {
+      if (entry === this.entryKey() && version === this.navigationVersion) this.pendingNavigation.set(undefined);
+    }
+  }
+
+  private async reloadMembershipVisibility(
+    hide: boolean,
+    position = this.membershipScrollPosition ?? { type: PositionKind.Bottom as const },
+  ) {
+    const entry = this.entryKey();
+    const version = ++this.navigationVersion;
+    this.pendingNavigation.set(undefined);
+    const around = position.type === PositionKind.Anchor ? position.messageId : undefined;
+    this.retryAction = () => void this.reloadMembershipVisibility(this.hideMembershipMessages(), position);
+    this.position.set(position);
+    const loaded = await this.conversation.open(around, false, hide);
+    if (!loaded || entry !== this.entryKey() || version !== this.navigationVersion) return;
+    if (position.type === PositionKind.Anchor) {
+      const messageId = position.messageId;
+      const visible = this.rows().filter((row) => row.confirmed);
+      const anchor = visible.find((row) => row.confirmed!.id >= messageId) ?? visible.at(-1);
+      position = anchor ? { ...position, messageId: anchor.confirmed!.id } : { type: PositionKind.Bottom };
+    }
+    this.position.set(position);
+  }
+
+  protected async navigateDown() {
+    if (this.pendingNavigation()) return;
+    const entry = this.entryKey();
+    // A return point is an explicit destination, so the unread start only applies below an empty stack.
+    if (!this.returnMessageIds().length && (await this.revealUnreadBoundary())) return;
+    if (entry !== this.entryKey()) return;
+    const messageId = this.returnMessageIds().at(-1);
+    this.navigatingDown.set(true);
+    try {
+      const reached = await this.goTo(
+        messageId ? { type: ConversationTargetKind.Message, messageId } : { type: ConversationTargetKind.Latest },
+      );
+      if (entry !== this.entryKey()) return;
+      // A deleted return target must not trap the button; network failures remain retryable.
+      if (messageId && (reached || this.conversation.error() === ConversationError.Missing))
+        this.returnMessageIds.update((ids) => ids.filter((id) => id !== messageId));
+    } finally {
+      if (entry === this.entryKey()) this.navigatingDown.set(false);
+    }
+  }
+
+  /**
+   * Stop at the live unread start before going on to the latest messages. Anchoring on the shared read
+   * state instead of the divider on screen keeps the step in sync with the unread badge.
+   * Returns false when the press should keep its normal destination.
+   */
+  private async revealUnreadBoundary() {
+    const unread = this.unreadStartId();
+    if (!unread) return false;
+    const entry = this.entryKey();
+    const element = this.messageElement(unread);
+    const scroll = await this.content()?.getScrollElement();
+    if (!element || !scroll || !this.isCurrent(entry)) return false;
+    // Unread already on screen counts as reached; the press would not move at all otherwise.
+    if (element.getBoundingClientRect().top <= scroll.getBoundingClientRect().bottom) return false;
+    this.position.set({ type: PositionKind.Unread, messageId: unread });
+    return true;
+  }
+
+  protected visibilityChanged() {
+    this.stateWatchVisible.set(!this.document.hidden);
+    if (this.document.hidden) {
+      this.saveDraft();
+      this.resetMentionSession(true);
+    } else {
+      void this.enterReactionSession();
+      void this.enterMentionSession();
+    }
+  }
+
+  private invalidateReactions() {
+    this.reactionFresh = false;
+    this.reactionChanged = true;
+    if (this.reactionRequest) this.reactionRequest.again = true;
+  }
+
+  private resetReactionSession() {
+    this.reactionFresh = false;
+    this.reactionChanged = false;
+    this.reactionSessionEntered = false;
+    this.reactionRequest = undefined;
+    this.reactionJumpIds.set([]);
+  }
+
+  private async enterReactionSession() {
+    if (this.document.hidden || this.panels.covered() || !this.isCurrent()) return;
+    if (this.reactionRequest || this.reactionFresh) return;
+    if (!this.reactionChanged && this.chatInfo.cachedUnreadReactions(this.id(), this.threadId()) === 0) {
+      this.reactionSessionEntered = true;
+      this.reactionFresh = true;
+      return;
+    }
+    const entry = this.entryKey();
+    const chatId = this.id();
+    const threadId = this.threadId();
+    this.reactionSessionEntered = true;
+    const request: NonNullable<ConversationPage['reactionRequest']> = { again: false };
+    this.reactionRequest = request;
+    try {
+      do {
+        request.again = false;
+        request.readThrough = undefined;
+        const response = await firstValueFrom(
+          this.api.chats.listUnreadReactions({ chatId, threadId }).pipe(takeUntilDestroyed(this.destroyRef)),
+        );
+        if (this.reactionRequest !== request || !this.isCurrent(entry) || this.document.hidden || this.panels.covered())
+          return;
+        this.reactionJumpIds.update((ids) =>
+          [...new Set([...ids, ...response.messageIds])]
+            .filter((id) => request.readThrough == null || id > request.readThrough)
+            .sort((a, b) => b - a),
+        );
+        const unread = await this.ackReactions(entry, chatId, threadId, response.readThrough);
+        if (this.reactionRequest !== request || !this.isCurrent(entry)) return;
+        if (unread == null) return;
+        if (unread > 0) request.again = true;
+        if (!request.again) {
+          this.reactionFresh = true;
+          this.reactionChanged = false;
+        }
+      } while (request.again && this.reactionRequest === request && this.isCurrent(entry) && !this.document.hidden);
+    } catch {
+      // Keep the server cursor and session targets on failure; entry/resync retries.
+    } finally {
+      if (this.reactionRequest === request) this.reactionRequest = undefined;
+    }
+  }
+
+  private async ackReactions(
+    entry = this.entryKey(),
+    chatId = this.id(),
+    threadId = this.threadId(),
+    readThrough?: string,
+  ) {
+    try {
+      const response = await firstValueFrom(this.api.chats.acknowledgeReactions({ chatId, threadId, readThrough }));
+      if (entry === this.entryKey()) this.chatInfo.applyReactionRead(chatId, threadId, response.unreadReactions);
+      return response.unreadReactions;
+    } catch {
+      // Leave the cursor unchanged so the next entry retries.
+      return undefined;
+    }
+  }
+
+  private async leaveReactionSession() {
+    const entered = this.reactionSessionEntered;
+    const entry = this.entryKey();
+    const chatId = this.id();
+    const threadId = this.threadId();
+    this.resetReactionSession();
+    // The router already points at the destination during ionViewWillLeave.
+    if (entered && !this.document.hidden && !this.panels.covered()) await this.ackReactions(entry, chatId, threadId);
+  }
+
+  protected async jumpToNextReaction() {
+    while (this.reactionJumpIds().length) {
+      const target = this.reactionJumpIds().at(-1)!;
+      const entry = this.entryKey();
+      const reached = await this.goTo({ type: ConversationTargetKind.Message, messageId: target });
+      if (entry !== this.entryKey()) return;
+      const missing = this.conversation.error() === ConversationError.Missing;
+      if (reached === true || missing) this.reactionJumpIds.update((ids) => ids.filter((id) => id !== target));
+      if (reached === true || !missing) return;
+    }
+  }
+
+  private resetMentionSession(retain = false) {
+    if (this.mentionRequest) {
+      this.mentionDirty = true;
+      this.mentionRequest.cancel.next();
+      this.mentionRequest = undefined;
+    }
+    if (!retain) {
+      this.mentionDirty = true;
+      this.mentionChanged = false;
+      this.mentionJumpIds.set([]);
+      this.dismissedMentions.clear();
+    }
+  }
+
+  private dismissMentions(ids: readonly SnowflakeID[]) {
+    for (const id of ids) this.dismissedMentions.add(id);
+    this.mentionJumpIds.update((targets) => targets.filter((id) => !this.dismissedMentions.has(id)));
+  }
+
+  /** Scrolling advances the shared read cursor; targets at or below it are no longer unread. */
+  private dismissReadThrough(readThrough: SnowflakeID) {
+    // Only discard targets from snapshots already in flight. A later reaction
+    // on an old message is a new notification, even when that message is read.
+    const request = this.reactionRequest;
+    if (request && (request.readThrough == null || readThrough > request.readThrough))
+      request.readThrough = readThrough;
+    this.mentionJumpIds.update((ids) => ids.filter((id) => id > readThrough));
+    this.reactionJumpIds.update((ids) => ids.filter((id) => id > readThrough));
+  }
+
+  private enterMentionSession(): Promise<void> {
+    if (this.document.hidden || !this.isCurrent()) return Promise.resolve();
+    if (this.chatInfo.get(this.id())?.kind === GroupKind.dm) {
+      this.resetMentionSession();
+      return Promise.resolve();
+    }
+    if (this.mentionRequest) return this.mentionRequest.promise;
+    if (!this.mentionDirty) return Promise.resolve();
+    const entry = this.entryKey();
+    const chatId = this.id();
+    const threadId = this.threadId();
+    const request = { cancel: new Subject<void>(), promise: Promise.resolve() };
+    this.mentionRequest = request;
+    request.promise = (async () => {
+      try {
+        if (!this.chatInfo.get(chatId)) await this.chatInfo.ensure(chatId);
+        if (this.mentionRequest !== request || !this.isCurrent(entry) || this.document.hidden) return;
+        if (this.chatInfo.get(chatId)?.kind !== GroupKind.group) return;
+        // Unknown and dirty counts must not be mistaken for a confirmed zero.
+        if (!this.mentionChanged && this.chatInfo.cachedUnreadMentions(chatId, threadId) === 0) {
+          this.mentionDirty = false;
+          return;
+        }
+        do {
+          // New data is coalesced; lifecycle callers simply share this operation.
+          if (this.mentionChanged)
+            await firstValueFrom(timer(100).pipe(takeUntil(request.cancel), takeUntilDestroyed(this.destroyRef)));
+          this.mentionDirty = false;
+          this.mentionChanged = false;
+          const response = await firstValueFrom(
+            this.api.chats
+              .listMentions({ chatId, threadId })
+              .pipe(takeUntil(request.cancel), takeUntilDestroyed(this.destroyRef)),
+          );
+          if (this.mentionRequest !== request || !this.isCurrent(entry) || this.document.hidden) return;
+          const read = this.chatInfo.lastReadMessageId(chatId, threadId);
+          this.mentionJumpIds.update((ids) =>
+            [...new Set([...ids, ...response.messageIds])]
+              .filter((id) => (read == null || id > read) && !this.dismissedMentions.has(id))
+              .sort((a, b) => b - a),
+          );
+        } while (this.mentionDirty);
+      } catch {
+        if (this.mentionRequest === request) this.mentionDirty = true;
+      } finally {
+        if (this.mentionRequest === request) this.mentionRequest = undefined;
+      }
+    })();
+    return request.promise;
+  }
+
+  protected async jumpToNextMention() {
+    while (this.mentionJumpIds().length) {
+      const target = this.mentionJumpIds().at(-1)!;
+      const entry = this.entryKey();
+      const reached = await this.goTo({ type: ConversationTargetKind.Message, messageId: target });
+      if (entry !== this.entryKey()) return;
+      const missing = this.conversation.error() === ConversationError.Missing;
+      if (reached === true || missing) this.dismissMentions([target]);
+      if (reached === true || !missing) return;
+    }
+  }
+
+  protected retry() {
+    this.retryAction();
+  }
+
+  private observeToolbar() {
+    const toolbar = this.toolbar()?.nativeElement;
+    const text = this.titleText()?.nativeElement;
+    if (!toolbar || !text) return;
+    const resize = new ResizeObserver(() => this.measureToolbar());
+    resize.observe(toolbar);
+    resize.observe(text);
+    this.destroyRef.onDestroy(() => resize.disconnect());
+  }
+
+  /** Publish the composer height so page overlays can sit above it. */
+  private observeComposer() {
+    const footer = this.composerFooter().nativeElement;
+    const resize = new ResizeObserver(() => {
+      this.hostElement.nativeElement.style.setProperty('--app-footer-height', `${footer.offsetHeight}px`);
+    });
+    resize.observe(footer);
+    this.destroyRef.onDestroy(() => resize.disconnect());
+  }
+
+  private async observeResize() {
+    const scroll = await this.content()?.getScrollElement();
+    if (!scroll || this.destroyRef.destroyed) return;
+    let entry = this.entryKey();
+    const contentTop = () => scroll.getBoundingClientRect().top - document.body.getBoundingClientRect().top;
+    let top = contentTop();
+    const resize = new ResizeObserver(() => {
+      if (!this.isCurrent()) return;
+      const nextTop = contentTop();
+      const offset = entry === this.entryKey() ? nextTop - top : 0;
+      entry = this.entryKey();
+      top = nextTop;
+      if (this.position()) return;
+      if (this.atBottom() && this.conversation.atLatest()) {
+        scroll.scrollTop = scroll.scrollHeight;
+      } else if (offset) {
+        // A changing header moves the viewport; keep messages at their screen positions.
+        scroll.scrollTop += offset;
+      }
+      void this.trackScroll();
+    });
+    resize.observe(scroll);
+    resize.observe(this.messageContent().nativeElement);
+    this.destroyRef.onDestroy(() => resize.disconnect());
+  }
+
+  private async positionAndRead() {
+    const entry = this.entryKey();
+    const version = this.navigationVersion;
+    const scroll = await this.content()?.getScrollElement();
+    if (!scroll || !this.isCurrent(entry) || version !== this.navigationVersion) return;
+    // A response can replace the range while getScrollElement is awaiting.
+    // Defer positioning until Angular has rendered the corresponding rows.
+    if (this.rows().length !== this.messageElements().length) return;
+    const position = this.position();
+    if (position) {
+      if (position.type === PositionKind.Bottom) {
+        scroll.scrollTop = scroll.scrollHeight;
+      } else if (position.type === PositionKind.Unread) {
+        const element = position.messageId
+          ? this.messageElement(position.messageId)
+          : this.unreadSeparator()?.nativeElement;
+        if (element) {
+          const top = scroll.scrollTop + element.getBoundingClientRect().top - scroll.getBoundingClientRect().top;
+          scroll.scrollTop = Math.max(0, Math.min(top, scroll.scrollHeight - scroll.clientHeight));
+        }
+      } else {
+        const element = this.messageElement(position.messageId);
+        if (element) {
+          const rect = element.getBoundingClientRect();
+          const edge = position.type === PositionKind.Anchor ? rect.bottom : rect.top;
+          const inset =
+            position.type === PositionKind.Anchor
+              ? position.offset
+              : Math.max(0, (scroll.clientHeight - element.offsetHeight) / 2);
+          scroll.scrollTop += edge - scroll.getBoundingClientRect().top - inset;
+          if (position.type === PositionKind.Message)
+            element.animate(
+              [{ backgroundColor: 'var(--ion-color-primary-tint)' }, { backgroundColor: 'transparent' }],
+              { duration: 1200 },
+            );
+        }
+      }
+      this.position.set(undefined);
+    }
+    await this.trackScroll();
+    if (position && this.isCurrent(entry) && version === this.navigationVersion) this.positioned.set(true);
+  }
+
+  private async trackScroll() {
+    const entry = this.entryKey();
+    const version = this.navigationVersion;
+    const scroll = await this.content()?.getScrollElement();
+    if (!scroll || !this.isCurrent(entry) || version !== this.navigationVersion) return;
+    const height = scroll.clientHeight;
+    const top = scroll.scrollTop;
+    const bounds = {
+      height,
+      above: Math.max(0, top),
+      below: Math.max(0, scroll.scrollHeight - top - height),
+    };
+    this.atBottom.set(bounds.below < 40);
+    if (
+      !this.entered ||
+      this.document.hidden ||
+      this.panels.covered() ||
+      this.conversation.loading() ||
+      this.position()
+    )
+      return bounds;
+    const rows = this.rows();
+    const elements = this.confirmedElements();
+    const viewport = scroll.getBoundingClientRect();
+    const allElements = this.messageElements();
+    if (rows.length !== allElements.length) return bounds;
+    let bottomLow = 0,
+      bottomHigh = allElements.length;
+    while (bottomLow < bottomHigh) {
+      const middle = (bottomLow + bottomHigh) >>> 1;
+      if (allElements[middle].nativeElement.getBoundingClientRect().bottom < viewport.bottom) bottomLow = middle + 1;
+      else bottomHigh = middle;
+    }
+    const bottomRow = rows[bottomLow];
+    const bottomElement = allElements[bottomLow]?.nativeElement;
+    const bubble = bottomElement?.querySelector('.bubble, .sticker-content')?.getBoundingClientRect();
+    const avatar = bottomElement?.querySelector('.avatar')?.getBoundingClientRect();
+    const sticky =
+      this.stickyAvatarsEnabled() &&
+      bottomRow &&
+      bubble &&
+      bubble.top < viewport.bottom &&
+      (!avatar || avatar.bottom > viewport.bottom);
+    this.stickySender.set(sticky ? bottomRow.message.sender : undefined);
+    this.stickyRow.set(sticky ? bottomLow : undefined);
+    this.stickyOffset.set(sticky && bottomRow.first ? Math.max(0, bubble.top + 34 - viewport.bottom) : 0);
+    let first = 0,
+      last = allElements.length - 1;
+    while (first < last) {
+      const middle = (first + last) >>> 1;
+      if (allElements[middle].nativeElement.getBoundingClientRect().bottom <= viewport.top) first = middle + 1;
+      else last = middle;
+    }
+    this.visibleDate.set(rows[first]?.message.createdAt);
+    // Settings can change this filter while the cached conversation is covered.
+    // Retain a non-membership row so it survives toggling in either direction.
+    let anchor = first;
+    while (rows[anchor] && (!rows[anchor].confirmed || isMembershipMessage(rows[anchor].message))) anchor++;
+    // A range of only membership events still identifies a historical location.
+    // Resolve its visible neighbour after fetching around that original message.
+    if (!rows[anchor]) {
+      anchor = first;
+      while (rows[anchor] && !rows[anchor].confirmed) anchor++;
+    }
+    const anchorMessage = rows[anchor]?.confirmed;
+    this.membershipScrollPosition =
+      this.atBottom() && this.conversation.atLatest()
+        ? { type: PositionKind.Bottom }
+        : anchorMessage
+          ? {
+              type: PositionKind.Anchor,
+              messageId: anchorMessage.id,
+              offset: allElements[anchor].nativeElement.getBoundingClientRect().bottom - viewport.top,
+            }
+          : undefined;
+    const floating = this.floatingDate().nativeElement;
+    const floatingTop = viewport.top + floating.offsetTop;
+    const floatingBottom = floatingTop + floating.offsetHeight;
+    const overlapMargin = 1;
+    const dates = this.dateSeparators();
+    let dateLow = 0,
+      dateHigh = dates.length;
+    while (dateLow < dateHigh) {
+      const mid = (dateLow + dateHigh) >>> 1;
+      if (dates[mid].nativeElement.getBoundingClientRect().bottom < floatingTop - overlapMargin) dateLow = mid + 1;
+      else dateHigh = mid;
+    }
+    const nextDate = dates[dateLow]?.nativeElement.getBoundingClientRect();
+    this.dateColliding.set(!!nextDate && nextDate.top <= floatingBottom + overlapMargin);
+    let dateRow = first;
+    while (dateRow > 0 && !rows[dateRow]?.dateBreak) dateRow--;
+    this.hiddenDateKey.set(rows[dateRow]?.key);
+    // Message bottoms are ordered, so finding the last visible bottom needs only log(n) layout reads.
+    let low = 0;
+    let high = elements.length - 1;
+    let visible = -1;
+    while (low <= high) {
+      const mid = (low + high) >>> 1;
+      if (elements[mid].nativeElement.getBoundingClientRect().bottom <= viewport.bottom) {
+        visible = mid;
+        low = mid + 1;
+      } else high = mid - 1;
+    }
+    const element = elements[visible]?.nativeElement;
+    const messageId = element?.getAttribute('data-message-id');
+    const confirmedId =
+      element && messageId && element.getBoundingClientRect().bottom > viewport.top ? encodeId(messageId) : undefined;
+    if (confirmedId) {
+      if (this.returnMessageIds().some((id) => id <= confirmedId))
+        this.returnMessageIds.update((ids) => ids.filter((id) => id > confirmedId));
+      const threadId = this.threadId();
+      void (
+        threadId
+          ? this.chatInfo.markThreadRead(this.id(), threadId, confirmedId)
+          : this.chatInfo.markRead(this.id(), confirmedId)
+      ).catch(() => {});
+    }
+    return bounds;
+  }
+
+  protected async onScroll() {
+    const entry = this.entryKey();
+    const version = this.navigationVersion;
+    const bounds = await this.trackScroll();
+    if (!bounds || !this.isCurrent(entry) || version !== this.navigationVersion || !this.entered || this.position())
+      return;
+    const { height, above, below } = bounds;
+    const threshold = height * 1.5;
+    const older = this.conversation.canLoad(PageDirection.Older) && above < threshold;
+    const newer = this.conversation.canLoad(PageDirection.Newer) && below < threshold;
+    if (older && (!newer || above < below)) void this.loadPage(PageDirection.Older);
+    else if (newer) void this.loadPage(PageDirection.Newer);
+  }
+
+  protected async loadPage(direction: PageDirection) {
+    if (!this.conversation.canLoad(direction)) return;
+    const entry = this.entryKey();
+    this.retryAction = () => void this.loadPage(direction);
+    const version = this.navigationVersion;
+    const scroll = await this.content()?.getScrollElement();
+    if (!this.isCurrent(entry) || version !== this.navigationVersion) return;
+    await this.conversation.load(direction, async () => {
+      if (direction !== PageDirection.Older || !scroll) return;
+      await this.scrolling.wait();
+      if (!this.isCurrent(entry) || version !== this.navigationVersion) return;
+      const top = scroll.getBoundingClientRect().top;
+      const index = this.messageElements().findIndex(
+        ({ nativeElement }) => nativeElement.getBoundingClientRect().bottom > top,
+      );
+      const element = this.messageElements()[index]?.nativeElement;
+      const messageId = this.messages()[index]?.message().id;
+      if (element && messageId)
+        this.position.set({
+          type: PositionKind.Anchor,
+          messageId,
+          // Prepending can remove this message's author header; preserve the content below it.
+          offset: element.getBoundingClientRect().bottom - top,
+        });
+    });
+  }
+
+  protected updateDraft(text: string) {
+    (!this.pendingForward() && this.editing() ? this.editText : this.draft).set(text);
+  }
+
+  protected saveDraft({ chatId, threadId } = { chatId: this.id(), threadId: this.threadId() }) {
+    if (this.active() && this.session.user())
+      this.drafts.save(chatId, threadId, this.draft(), this.replyTo()?.id ?? this.savedReplyId());
+  }
+
+  protected cancelReply() {
+    this.replyTo.set(undefined);
+    this.savedReplyId.set(undefined);
+  }
+
+  protected cancelForward() {
+    this.drafts.setForward(this.id(), this.threadId());
+  }
+
+  protected changeForwardTarget() {
+    const messages = this.pendingForward();
+    if (messages) this.forwardMove.set({ chatId: this.id(), threadId: this.threadId(), messages });
+  }
+
+  protected sendForward(mentions: MentionInfo[] = []) {
+    const sources = this.pendingForward();
+    if (!sources || !this.isCurrent() || !this.canSendMessage()) return;
+    this.outbox.enqueueForward(this.id(), this.threadId(), sources, {
+      comment: this.draft(),
+      commentMentions: mentions,
+    });
+    this.cancelForward();
+    this.draft.set('');
+    this.saveDraft();
+    this.position.set({ type: PositionKind.Bottom });
+    if (!this.conversation.atLatest()) void this.goTo({ type: ConversationTargetKind.Latest });
+  }
+
+  private async restoreReply(messageId: SnowflakeID) {
+    const entry = this.entryKey();
+    try {
+      const message = await firstValueFrom(
+        this.api.messages.get({ chatId: entry.chatId, messageId }).pipe(takeUntilDestroyed(this.destroyRef)),
+      );
+      if (this.isCurrent(entry) && this.savedReplyId() === messageId && !this.replyTo()) {
+        if (message.isDeleted) {
+          this.cancelReply();
+        } else {
+          this.replyTo.set(message);
+        }
+      }
+    } catch {
+      // Keep the text usable if the original reply is no longer available.
+    }
+  }
+
+  protected async sendMessage(composition: Composition = { messageType: MessageType.text, attachmentIds: [] }) {
+    if (this.speakingRestriction()) return;
+    const target = this.editTarget();
+    const text = (target ? this.editText() : this.draft()).trim();
+    if (!text && !composition.attachmentIds.length && !composition.uploads?.length && !composition.sticker) return;
+    if (target) {
+      const item =
+        'delivery' in target
+          ? this.outbox.edit(target, text, composition)
+          : this.outbox.enqueueEdit(target, this.threadId(), text, composition);
+      this.cancelEdit();
+      return item.operation;
+    }
+    const item = this.outbox.enqueue(
+      this.id(),
+      this.threadId(),
+      text,
+      composition,
+      this.replyTo(),
+      this.replyTo()?.id ?? this.savedReplyId(),
+    );
+    if (composition.messageType === MessageType.text) {
+      this.draft.set('');
+      this.drafts.clear(this.id(), this.threadId());
+    }
+    this.cancelReply();
+    this.position.set({ type: PositionKind.Bottom });
+    if (!this.conversation.atLatest()) void this.goTo({ type: ConversationTargetKind.Latest });
+    return item.operation;
+  }
+
+  private loadChatInfo() {
+    const id = this.id();
+    return this.chatInfo.get(id)?.kind === GroupKind.dm ? this.chatInfo.ensure(id) : this.chatInfo.ensureDetails(id);
+  }
+
+  private async refreshConversationMetadata() {
+    await Promise.all([
+      this.loadChatInfo(),
+      this.loadThreadRoot(),
+      this.threadId() ? this.loadSubscription() : this.chatInfo.getReadState(this.id()),
+    ]);
+  }
+
+  protected async loadSubscription() {
+    const threadId = this.threadId();
+    if (!threadId || this.threadLoading()) return;
+    const entry = this.entryKey();
+    const version = ++this.subscriptionVersion;
+    this.threadLoading.set(true);
+    this.threadError.set(undefined);
+    try {
+      await this.chatInfo.loadSubscription(this.id(), threadId);
+    } catch {
+      if (this.isCurrent(entry) && version === this.subscriptionVersion) this.threadError.set(ThreadError.Load);
+    } finally {
+      if (this.isCurrent(entry) && version === this.subscriptionVersion) this.threadLoading.set(false);
+    }
+  }
+
+  protected async updateThread() {
+    const threadId = this.threadId();
+    const action = this.threadAction();
+    if (!threadId || !action || this.threadUpdating()) return;
+    const entry = this.entryKey();
+    this.threadUpdating.set(true);
+    this.threadError.set(undefined);
+    try {
+      let status = this.subscription();
+      if (!status) {
+        // The tap landed before the status arrived; wait for the shared read instead of acting blind.
+        try {
+          await this.chatInfo.loadSubscription(this.id(), threadId);
+        } catch {
+          if (this.isCurrent(entry)) this.threadError.set(ThreadError.Load);
+          return;
+        }
+        if (!this.isCurrent(entry)) return;
+        status = this.subscription();
+        if (!status) return;
+      }
+      const archived = status.subscribed && status.archived;
+      if (action.kind === ThreadActionKind.Subscribe && !status.subscribed) {
+        await this.chatInfo.subscribeThread(this.id(), threadId);
+      } else if (action.kind === ThreadActionKind.Archive && status.subscribed && !archived) {
+        await this.chatInfo.setThreadArchived(this.id(), threadId, true);
+      } else if (action.kind === ThreadActionKind.Unarchive && archived) {
+        await this.chatInfo.setThreadArchived(this.id(), threadId, false);
+      }
+    } catch {
+      if (this.isCurrent(entry)) this.threadError.set(ThreadError.Update);
+    } finally {
+      if (this.isCurrent(entry)) this.threadUpdating.set(false);
+    }
+  }
+
+  protected openThread(rootId: SnowflakeID) {
+    void this.router.navigate(['/chats/chat', decodeId(this.id()), 'thread', decodeId(rootId)]);
+  }
+
+  protected startReply(message: MessageResponse) {
+    if (!this.canSendMessage()) return;
+    this.cancelForward();
+    this.replyTo.set(message);
+    this.savedReplyId.set(undefined);
+    if (this.atBottom()) this.position.set({ type: PositionKind.Bottom });
+    void this.composer()?.setFocus();
+  }
+}

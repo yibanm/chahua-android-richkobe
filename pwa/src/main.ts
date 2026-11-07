@@ -1,0 +1,95 @@
+import { PanelUrlSerializer } from './app/navigation/panel-url';
+import { inject, isDevMode, provideAppInitializer, provideBrowserGlobalErrorListeners } from '@angular/core';
+import { provideServiceWorker } from '@angular/service-worker';
+import { AppInstall } from './app/pwa/app-install';
+import { AppUpdates } from './app/pwa/app-updates';
+import { LegacyMigration } from './app/pwa/legacy-migration';
+import { HttpFeature, HttpFeatureKind, provideHttpClient, withFetch, withInterceptors } from '@angular/common/http';
+import { bootstrapApplication } from '@angular/platform-browser';
+import {
+  UrlSerializer,
+  RouteReuseStrategy,
+  provideRouter,
+  withComponentInputBinding,
+  withRouterConfig,
+} from '@angular/router';
+import { provideTransloco } from '@jsverse/transloco';
+import { IonicRouteStrategy, provideIonicAngular } from '@ionic/angular';
+
+import { routes } from './app/app.routes';
+import { App } from './app/app/app';
+import { provideChahuaBaseUrl } from './generated/endpoints/chahua.base-url';
+import { authInterceptor } from './app/api/auth.interceptor';
+import { jsonInterceptor } from './app/api/json.interceptor';
+import { Appearance } from './app/settings/appearance';
+import { Localization } from './app/i18n/localization';
+import { TranslocoHttpLoader } from './app/i18n/transloco-http-loader';
+import { defaultLocale, supportedLocales } from './app/settings/locale';
+import { isTauri } from './app/tauri/tauri-runtime';
+
+// https://stackoverflow.com/a/2117523/2800218
+if (isDevMode() && typeof crypto.randomUUID !== 'function')
+  crypto.randomUUID = function randomUUID() {
+    return '10000000-1000-4000-8000-100000000000'.replace(/[018]/g, (c: string) =>
+      (+c ^ (crypto.getRandomValues(new Uint8Array(1))[0] & (15 >> (+c / 4)))).toString(16),
+    ) as ReturnType<Crypto['randomUUID']>;
+  };
+
+// Tauri 壳内必须让 HttpClient 走 fetch：window.fetch 已被 main.tauri.ts 替换为
+// Rust 侧实现（绕开官方服务器只允许 https://chahua.app 的 CORS 白名单）。
+// Web/PWA 构建下 isTauri() 恒为 false，继续沿用默认的 XHR backend，行为不变。
+const httpFeatures: HttpFeature<HttpFeatureKind>[] = [withInterceptors([authInterceptor, jsonInterceptor])];
+if (isTauri()) httpFeatures.push(withFetch());
+
+bootstrapApplication(App, {
+  providers: [
+    provideBrowserGlobalErrorListeners(),
+    provideServiceWorker(isDevMode() ? 'serviceWorker.js?development=1' : 'serviceWorker.js', {
+      // Tauri 壳内禁用 ngsw：桌面端由 Tauri 自带更新机制负责，
+      // 且 Service Worker 的缓存会绕过 Rust HTTP 通道导致数据不一致。
+      enabled: !isTauri(),
+      registrationStrategy: isDevMode() ? 'registerImmediately' : 'registerWhenStable:3000',
+      updateViaCache: 'none',
+    }),
+    provideTransloco({
+      config: {
+        availableLangs: [...supportedLocales],
+        defaultLang: defaultLocale,
+        fallbackLang: defaultLocale,
+        reRenderOnLangChange: true,
+        prodMode: !isDevMode(),
+        missingHandler: { logMissingKey: isDevMode(), useFallbackTranslation: true, allowEmpty: true },
+      },
+      loader: TranslocoHttpLoader,
+    }),
+    provideAppInitializer(async () => {
+      inject(AppInstall);
+      inject(Appearance);
+      inject(AppUpdates);
+      const legacyMigration = inject(LegacyMigration);
+      const localization = inject(Localization);
+      await legacyMigration.run();
+      await localization.initialize();
+    }),
+    provideHttpClient(...httpFeatures),
+    provideChahuaBaseUrl(CHAHUA_API_BASE),
+    { provide: RouteReuseStrategy, useClass: IonicRouteStrategy },
+    { provide: UrlSerializer, useClass: PanelUrlSerializer },
+    provideIonicAngular({
+      mode: 'ios',
+      backButtonText: '',
+      spinner: 'circular',
+      loadingSpinner: 'circular',
+      refreshingSpinner: 'circular',
+      infiniteLoadingSpinner: 'circular',
+      useSetInputAPI: true,
+    }),
+    provideRouter(routes, withComponentInputBinding(), withRouterConfig({ canceledNavigationResolution: 'computed' })),
+  ],
+}).then(
+  () => window.chahuaStartup?.finish(),
+  (error: unknown) => {
+    window.chahuaStartup?.fail();
+    console.error('Unable to start Chahua', error);
+  },
+);

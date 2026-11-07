@@ -1,0 +1,175 @@
+<ion-header [translucent]="true">
+  <ion-toolbar>
+    <ion-title>{{ 'pwa.landing.title' | transloco }}</ion-title>
+  </ion-toolbar>
+</ion-header>
+<ion-content appScrollbars [fullscreen]="true" class="landing-page">
+  <section class="landing-hero">
+    <div class="landing-hero__copy">
+      <h1>{{ 'pwa.landing.hero.title' | transloco }}</h1>
+      <p>{{ 'pwa.landing.hero.install' | transloco }}</p>
+      <p>{{ 'pwa.landing.hero.share' | transloco }}</p>
+    </div>
+  </section>
+
+  <section id="platform-guides" class="landing-content">
+    <ion-segment
+      appScrollbars
+      mode="ios"
+      [value]="selected()"
+      [scrollable]="true"
+      class="landing-platform-segment"
+      (ionChange)="select($event.detail.value)">
+      <ion-segment-button
+        value="android"
+        [class.landing-platform-segment__button--current]="detected === Platform.android">
+        Android
+      </ion-segment-button>
+      <ion-segment-button value="ios" [class.landing-platform-segment__button--current]="detected === Platform.ios">
+        iOS
+      </ion-segment-button>
+      <ion-segment-button
+        value="windows"
+        [class.landing-platform-segment__button--current]="detected === Platform.windows">
+        Windows
+      </ion-segment-button>
+      <ion-segment-button value="macos" [class.landing-platform-segment__button--current]="detected === Platform.macos">
+        macOS
+      </ion-segment-button>
+      <ion-segment-button value="linux" [class.landing-platform-segment__button--current]="detected === Platform.linux">
+        Linux
+      </ion-segment-button>
+    </ion-segment>
+
+    <ion-card class="landing-card">
+      @if (selected() === Platform.android) {
+        <ion-card-content>
+          <ol class="landing-steps">
+            <li>
+              {{ 'pwa.landing.android.step1Before' | transloco }}
+              <span class="landing-inline-text">
+                <ion-icon [icon]="icons.logoChrome" class="landing-inline-text__icon" />
+                <span>{{ 'pwa.landing.browserChrome' | transloco }}</span>
+              </span>
+              {{ 'pwa.landing.android.step1After' | transloco }}
+            </li>
+            <li>
+              {{ 'pwa.landing.android.step2Before' | transloco }}
+              <span class="landing-inline-text">
+                <ion-icon [icon]="icons.ellipsisVertical" class="landing-inline-text__icon" />
+                <span>{{ 'pwa.landing.menu' | transloco }}</span>
+              </span>
+            </li>
+            <li>{{ 'pwa.landing.android.step3' | transloco }}</li>
+            <li>{{ 'pwa.landing.android.step4' | transloco }}</li>
+          </ol>
+          <ion-text color="medium">
+            <p class="landing-note">{{ 'pwa.landing.android.note' | transloco }}</p>
+            <p class="landing-note">
+              {{ 'pwa.landing.android.note2Before' | transloco }}
+              <span class="landing-inline-text">
+                <ion-icon [icon]="icons.logoEdge" class="landing-inline-text__icon" />
+                <span>{{ 'pwa.landing.browserEdge' | transloco }}</span>
+              </span>
+              <br />
+              {{ 'pwa.landing.android.note2Mid' | transloco }}
+              <span class="landing-inline-text">
+                <ion-icon [icon]="icons.menuOutline" class="landing-inline-text__icon" />
+                <span>{{ 'pwa.landing.menu' | transloco }}</span>
+              </span>
+              {{ 'pwa.landing.android.note2After' | transloco }}
+            </p>
+          </ion-text>
+        </ion-card-content>
+      }
+
+      @if (selected() === Platform.ios) {
+        <ion-card-content>
+          <ol class="landing-steps">
+            <li>
+              {{ 'pwa.landing.ios.step1Before' | transloco }}
+              <span class="landing-inline-text">
+                <ion-icon [icon]="icons.logoApple" class="landing-inline-text__icon" />
+                <span>{{ 'pwa.landing.browserSafari' | transloco }}</span>
+              </span>
+              {{ 'pwa.landing.ios.step1After' | transloco }}
+            </li>
+            <li>
+              {{ 'pwa.landing.ios.step2Before' | transloco }}
+              <span class="landing-inline-text">
+                <ion-icon [icon]="icons.ellipsisHorizontal" class="landing-inline-text__icon" />
+                <span>{{ 'pwa.landing.menu' | transloco }}</span>
+              </span>
+              {{ 'pwa.landing.ios.step2Between' | transloco }}
+              <span class="landing-inline-text">
+                <ion-icon [icon]="icons.shareOutline" class="landing-inline-text__icon" />
+                <span>{{ 'pwa.landing.share' | transloco }}</span>
+              </span>
+            </li>
+            <li>{{ 'pwa.landing.ios.step3' | transloco }}</li>
+            <li>{{ 'pwa.landing.ios.step4' | transloco }}</li>
+          </ol>
+        </ion-card-content>
+      }
+
+      @if (selected() === Platform.windows) {
+        <ion-card-content>
+          <ol class="landing-steps">
+            <li>
+              {{ 'pwa.landing.windows.step1Before' | transloco }}
+              <span class="landing-inline-text">
+                <ion-icon [icon]="icons.logoEdge" class="landing-inline-text__icon" />
+                <span>{{ 'pwa.landing.browserEdge' | transloco }}</span>
+              </span>
+              {{ 'pwa.landing.windows.step1After' | transloco }}
+            </li>
+            <li>
+              {{ 'pwa.landing.windows.step2Before' | transloco }}
+              <span class="landing-inline-text">
+                <ion-icon [icon]="icons.ellipsisHorizontal" class="landing-inline-text__icon" />
+                <span>{{ 'pwa.landing.menu' | transloco }}</span>
+              </span>
+            </li>
+            <li>{{ 'pwa.landing.windows.step3' | transloco }}</li>
+            <li>{{ 'pwa.landing.windows.step4' | transloco }}</li>
+          </ol>
+          <ion-text color="medium">
+            <p class="landing-note">{{ 'pwa.landing.windows.note' | transloco }}</p>
+          </ion-text>
+        </ion-card-content>
+      }
+
+      @if (selected() === Platform.macos) {
+        <ion-card-content>
+          <ol class="landing-steps">
+            <li>
+              {{ 'pwa.landing.macos.step1Before' | transloco }}
+              <span class="landing-inline-text">
+                <ion-icon [icon]="icons.logoApple" class="landing-inline-text__icon" />
+                <span>{{ 'pwa.landing.browserSafari' | transloco }}</span>
+              </span>
+              {{ 'pwa.landing.macos.step1After' | transloco }}
+            </li>
+            <li>
+              {{ 'pwa.landing.macos.step2Before' | transloco }}
+              <span class="landing-inline-text">
+                <ion-icon [icon]="icons.shareOutline" class="landing-inline-text__icon" />
+                <span>{{ 'pwa.landing.share' | transloco }}</span>
+              </span>
+            </li>
+            <li>{{ 'pwa.landing.macos.step3' | transloco }}</li>
+            <li>{{ 'pwa.landing.macos.step4' | transloco }}</li>
+          </ol>
+        </ion-card-content>
+      }
+
+      @if (selected() === Platform.linux) {
+        <ion-card-content>
+          <ion-text color="medium">
+            <p class="landing-note landing-note--compact">{{ 'pwa.landing.linux.note' | transloco }}</p>
+          </ion-text>
+        </ion-card-content>
+      }
+    </ion-card>
+  </section>
+</ion-content>

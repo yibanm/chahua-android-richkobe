@@ -1,0 +1,177 @@
+<ion-modal
+  class="message-menu-modal"
+  [enterAnimation]="enterAnimation"
+  [leaveAnimation]="leaveAnimation"
+  [isOpen]="!!message()"
+  (didDismiss)="selection.set(undefined)">
+  <ng-template>
+    @if (selection(); as selection) {
+      @if (message(); as message) {
+        <div class="menu-surface" (click)="dismissBackdrop($event)">
+          @if (emojiAnchor() && serverMessage(); as serverMessage) {
+            <app-emoji-panel
+              [class.ion-hide]="!choosingEmoji()"
+              [active]="choosingEmoji()"
+              [title]="'messages.menu.addReaction' | transloco"
+              [anchor]="emojiAnchor()"
+              (chosen)="reactTo(serverMessage, $event)"
+              (back)="choosingEmoji.set(false)"
+              (dismissed)="close()" />
+          }
+          @if (!choosingEmoji()) {
+            <div #stack class="menu-stack" [style.visibility]="placed() ? null : 'hidden'" [class.own]="selection.own">
+              @if (canReact() && serverMessage(); as serverMessage) {
+                <div #reactionBar class="reactions panel">
+                  @for (emoji of quickEmojis(); track emoji) {
+                    <button type="button" [class.selected]="selected(emoji)" (click)="reactTo(serverMessage, emoji)">
+                      {{ emoji }}
+                    </button>
+                  }
+                  @if (serverMessage.reactions.length < 50) {
+                    <button type="button" (click)="openEmojiPicker($event)">
+                      <ion-icon [icon]="icons.addOutline"></ion-icon>
+                    </button>
+                  }
+                </div>
+              }
+              <div #preview class="preview">
+                <app-message
+                  [message]="message"
+                  [delivery]="queued()?.delivery()"
+                  [uploads]="queued()?.uploads ?? []"
+                  [own]="selection.own"
+                  [canOpenThread]="!threadId()"
+                  [preview]="true"></app-message>
+              </div>
+              <div #actions class="actions panel">
+                @for (slot of slots(); track $index) {
+                  @if (slot.kind === 'paging') {
+                    <button type="button" (click)="turnPage()">
+                      <ion-icon [icon]="slot.direction === 'up' ? icons.chevronUp : icons.chevronDown"></ion-icon>
+                    </button>
+                  } @else {
+                    <button
+                      type="button"
+                      [class.destructive]="slot.destructive"
+                      [disabled]="slot.disabled"
+                      (click)="choose(slot.action)">
+                      <ion-icon [icon]="actionIcons()[slot.action]"></ion-icon>
+                      <span>
+                        @switch (slot.action) {
+                          @case (Action.Forward) {
+                            {{ 'messages.forward.action' | transloco }}
+                          }
+                          @case (Action.Select) {
+                            {{ 'messages.forward.select' | transloco }}
+                          }
+                          @case (Action.Reply) {
+                            {{ 'messages.menu.actions.reply' | transloco }}
+                          }
+                          @case (Action.Thread) {
+                            {{ 'messages.menu.actions.thread' | transloco }}
+                          }
+                          @case (Action.Pin) {
+                            {{ (pinned() ? 'messages.menu.actions.unpin' : 'messages.menu.actions.pin') | transloco }}
+                          }
+                          @case (Action.Copy) {
+                            {{ 'messages.menu.actions.copy' | transloco }}
+                          }
+                          @case (Action.Edit) {
+                            {{ 'messages.menu.actions.edit' | transloco }}
+                          }
+                          @case (Action.Save) {
+                            {{ (saved() ? 'messages.menu.actions.unsave' : 'messages.menu.actions.save') | transloco }}
+                          }
+                          @case (Action.FavoriteSticker) {
+                            {{
+                              (favorited()
+                                ? 'messages.menu.actions.unfavoriteSticker'
+                                : 'messages.menu.actions.favoriteSticker'
+                              ) | transloco
+                            }}
+                          }
+                          @case (Action.Link) {
+                            {{ 'messages.menu.actions.link' | transloco }}
+                          }
+                          @case (Action.CreateSticker) {
+                            {{ 'stickers.fromMessage.action' | transloco }}
+                          }
+                          @case (Action.Recall) {
+                            {{ 'messages.menu.actions.recall' | transloco }}
+                          }
+                          @case (Action.Reactions) {
+                            {{ 'messages.menu.actions.reactions' | transloco }}
+                          }
+                        }
+                      </span>
+                    </button>
+                  }
+                }
+              </div>
+            </div>
+          }
+        </div>
+      }
+    }
+  </ng-template>
+</ion-modal>
+<ion-alert
+  [isOpen]="!!confirmation()"
+  [header]="
+    (confirmation()?.action === Action.Recall
+      ? 'messages.menu.confirm.recallTitle'
+      : confirmation()?.pinned
+        ? 'messages.menu.confirm.unpinTitle'
+        : 'messages.menu.confirm.pinTitle'
+    ) | transloco
+  "
+  [message]="
+    confirmation()?.action === Action.Recall
+      ? recallAuthor()
+        ? ('messages.menu.confirm.recallAuthor' | transloco: { name: recallAuthor() })
+        : ((dm() ? 'messages.menu.confirm.recallDm' : 'messages.menu.confirm.recall') | transloco)
+      : confirmation()?.pinned
+        ? ('messages.menu.confirm.unpin' | transloco)
+        : ((dm() ? 'messages.menu.confirm.pinDm' : 'messages.menu.confirm.pin') | transloco)
+  "
+  [buttons]="[
+    { text: ('common.cancel' | transloco), role: 'cancel' },
+    { text: ('common.confirm' | transloco), role: 'confirm' },
+  ]"
+  (didDismiss)="confirm($event)"></ion-alert>
+<ion-toast
+  [isOpen]="!!notice()"
+  [duration]="2500"
+  (didDismiss)="notice.set(undefined)"
+  [message]="
+    notice() === Notice.StickerAdded
+      ? ('stickers.added' | transloco)
+      : notice() === Notice.Copied
+        ? ('messages.menu.notice.copied' | transloco)
+        : notice() === Notice.Saved
+          ? ('messages.menu.notice.saved' | transloco)
+          : notice() === Notice.Unsaved
+            ? ('messages.menu.notice.unsaved' | transloco)
+            : notice() === Notice.Pinned
+              ? ('messages.menu.notice.pinned' | transloco)
+              : notice() === Notice.Unpinned
+                ? ('messages.menu.notice.unpinned' | transloco)
+                : notice() === Notice.Recalled
+                  ? ('messages.menu.notice.recalled' | transloco)
+                  : notice() === Notice.ReactionLimit
+                    ? ('messages.menu.notice.reactionLimit' | transloco)
+                    : notice() === Notice.MetadataFailed
+                      ? ('messages.menu.notice.metadataFailed' | transloco)
+                      : ('messages.menu.notice.failed' | transloco)
+  "></ion-toast>
+
+@if (forwarding().length) {
+  <app-forward-picker [messages]="forwarding()" (closed)="forwarding.set([])" />
+}
+@if (stickerSource(); as source) {
+  <app-sticker-from-message
+    [message]="source.message"
+    [packs]="source.packs"
+    (closed)="stickerSource.set(undefined)"
+    (saved)="notice.set(Notice.StickerAdded)" />
+}

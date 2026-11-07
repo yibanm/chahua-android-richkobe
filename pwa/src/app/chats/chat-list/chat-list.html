@@ -1,0 +1,142 @@
+<ion-header>
+  @if (searching()) {
+    <ion-toolbar>
+      <ion-searchbar
+        [placeholder]="'chats.list.searchGroupsAndUsers' | transloco"
+        [debounce]="300"
+        showCancelButton="always"
+        (ionInput)="search.set($event.detail.value || '')"
+        (ionCancel)="searching.set(false); search.set('')" />
+    </ion-toolbar>
+  } @else {
+    <ion-toolbar>
+      @if (list().archived || list().requestHistory) {
+        <ion-buttons slot="start">
+          <ion-button class="list-back" (click)="back()"><ion-icon slot="icon-only" [icon]="backIcon" /></ion-button>
+        </ion-buttons>
+        <ion-title>
+          {{ (list().requestHistory ? 'chats.list.friendRequests' : 'chats.list.archived') | transloco }}
+        </ion-title>
+      } @else {
+        <ion-buttons slot="start">
+          <ion-button (click)="profileMenu.present($event)">
+            <ion-avatar [avatarColor]="session.user()?.avatarUrl ? null : (session.user()?.username ?? '')">
+              @if (session.user()?.avatarUrl; as src) {
+                <img [src]="src" width="26" height="26" decoding="async" />
+              } @else {
+                {{ session.user()?.username | avatarText }}
+              }
+            </ion-avatar>
+          </ion-button>
+        </ion-buttons>
+        <ion-segment mode="ios" [value]="list().tab" (ionChange)="selectTab($event)">
+          <ion-segment-button [value]="ListTab.Messages">
+            <ion-label>
+              {{ 'chats.list.tabs.messages' | transloco }}
+              @if (tabBadges().messages.mention) {
+                <ion-badge>@</ion-badge>
+              } @else if (tabBadges().messages.count; as count) {
+                <ion-badge>{{ count }}</ion-badge>
+              }
+            </ion-label>
+          </ion-segment-button>
+          <ion-segment-button [value]="ListTab.Groups">
+            <ion-label>
+              {{ 'chats.list.tabs.groups' | transloco }}
+              @if (tabBadges().groups.mention) {
+                <ion-badge>@</ion-badge>
+              } @else if (tabBadges().groups.count; as count) {
+                <ion-badge>{{ count }}</ion-badge>
+              }
+            </ion-label>
+          </ion-segment-button>
+          <ion-segment-button [value]="ListTab.Friends">
+            <ion-label>
+              {{ 'chats.list.tabs.friends' | transloco }}
+              @if (tabBadges().friends.mention) {
+                <ion-badge>@</ion-badge>
+              } @else if (tabBadges().friends.count; as count) {
+                <ion-badge>{{ count }}</ion-badge>
+              }
+            </ion-label>
+          </ion-segment-button>
+          <ion-segment-button [value]="ListTab.Threads">
+            <ion-label>
+              {{ 'chats.list.tabs.threads' | transloco }}
+              @if (tabBadges().threads.mention) {
+                <ion-badge>@</ion-badge>
+              } @else if (tabBadges().threads.count; as count) {
+                <ion-badge>{{ count }}</ion-badge>
+              }
+            </ion-label>
+          </ion-segment-button>
+        </ion-segment>
+        <ion-buttons slot="end">
+          <ion-button (click)="addMenu.present($event)">
+            <ion-icon class="action-icon" slot="icon-only" [icon]="addIcon"></ion-icon>
+          </ion-button>
+        </ion-buttons>
+      }
+    </ion-toolbar>
+  }
+  @if (!sidebar()) {
+    <app-voice-bar />
+  }
+</ion-header>
+@if (searching()) {
+  <ion-content appScrollbars><app-directory-search [query]="search()" /></ion-content>
+} @else if (list().archived || list().requestHistory) {
+  <app-chat-list-content [selection]="list()" [active]="active()" (openList)="openList.emit($event)" />
+} @else {
+  <div class="tab-pages">
+    @for (tab of tabs; track tab) {
+      <div #panel class="tab-page" [attr.data-tab]="tab" [hidden]="list().tab !== tab">
+        <app-chat-list-content
+          [selection]="{ tab, archived: false, requestHistory: false }"
+          [active]="active() && list().tab === tab"
+          (openList)="openList.emit($event)" />
+      </div>
+    }
+  </div>
+}
+<ion-popover #addMenu [dismissOnSelect]="true">
+  <ng-template>
+    <ion-list>
+      @if (canCreateGroup()) {
+        <ion-item [button]="true" routerLink="/chats/new">
+          <ion-label>{{ 'chats.list.add.createGroup' | transloco }}</ion-label>
+        </ion-item>
+      }
+      <ion-item [button]="true" routerLink="/chats/join">
+        <ion-label>{{ 'chats.list.add.joinGroup' | transloco }}</ion-label>
+      </ion-item>
+      <ion-item [button]="true" routerLink="/chats/add-friend">
+        <ion-label>{{ 'chats.list.add.addFriend' | transloco }}</ion-label>
+      </ion-item>
+      <ion-item [button]="true" (click)="searching.set(true)">
+        <ion-label>{{ 'chats.list.add.search' | transloco }}</ion-label>
+      </ion-item>
+    </ion-list>
+  </ng-template>
+</ion-popover>
+
+<ion-popover #profileMenu side="bottom" alignment="start" [arrow]="false" [dismissOnSelect]="true">
+  <ng-template>
+    <ion-list>
+      <ion-item [button]="true" [detail]="false" routerLink="/chats/saved">
+        <ion-icon slot="start" [icon]="savedIcon" color="primary"></ion-icon>
+        <ion-label>{{ 'settings.menu.saved' | transloco }}</ion-label>
+      </ion-item>
+      <ion-item [button]="true" [detail]="false" routerLink="/settings">
+        <ion-icon slot="start" [icon]="settingsIcon" color="primary"></ion-icon>
+        <ion-label>{{ 'settings.title' | transloco }}</ion-label>
+      </ion-item>
+      @if (installer.available()) {
+        <ion-item [button]="true" [detail]="false" (click)="installer.install()" lines="none">
+          <ion-icon slot="start" [icon]="installIcon" color="primary"></ion-icon>
+          <ion-label>{{ 'settings.menu.install' | transloco }}</ion-label>
+        </ion-item>
+      }
+    </ion-list>
+  </ng-template>
+</ion-popover>

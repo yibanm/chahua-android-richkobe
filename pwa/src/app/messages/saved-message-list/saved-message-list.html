@@ -1,0 +1,56 @@
+<div class="message-list">
+  @for (row of savedRows(); track row.item.id) {
+    @let item = row.item;
+    <div>
+      <p class="saved-source">{{ item.chat.name }} · {{ item.originalCreatedAt | messageDate }}</p>
+      <app-message
+        [message]="row.content"
+        [savedId]="item.id"
+        [interactive]="false"
+        [contextMenu]="true"
+        (menu)="openMenu(item, $event)"
+        [own]="item.originalSenderUid === session.user()?.uid"></app-message>
+    </div>
+  } @empty {
+    @if (!loading() && !failed()) {
+      <p class="ion-text-center">{{ 'conversation.emptySaved' | transloco }}</p>
+    }
+  }
+</div>
+@if (nextCursor() != null && !failed()) {
+  <ion-infinite-scroll threshold="100px" (ionInfinite)="more($event)">
+    <ion-infinite-scroll-content />
+  </ion-infinite-scroll>
+}
+@if (loading() && !savedRows().length) {
+  <div class="page-loading">
+    <ion-spinner></ion-spinner>
+  </div>
+}
+@if (failed()) {
+  <app-load-error [message]="'conversation.loadFailed' | transloco" (retry)="load(!!nextCursor())" />
+}
+<ion-toast
+  [isOpen]="removeFailed()"
+  [message]="'messages.menu.notice.failed' | transloco"
+  [duration]="2500"
+  (didDismiss)="removeFailed.set(false)"></ion-toast>
+
+<ion-popover [isOpen]="!!menu()" [event]="menu()?.event" (didDismiss)="menu.set(undefined)">
+  <ng-template>
+    @if (menu(); as selected) {
+      <ion-list>
+        <ion-item [button]="true" [disabled]="!selected.item.canLocateContext" (click)="locateSaved(selected.item)">
+          {{ 'conversation.viewOriginal' | transloco }}
+        </ion-item>
+        <ion-item
+          [button]="true"
+          [disabled]="removing() || loading()"
+          (click)="removeSaved(selected.item)"
+          color="danger">
+          {{ 'conversation.unsave' | transloco }}
+        </ion-item>
+      </ion-list>
+    }
+  </ng-template>
+</ion-popover>

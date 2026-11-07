@@ -1,0 +1,30 @@
+:host {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 230px;
+  max-width: 100%;
+  height: max(66px, calc(var(--app-line-body) + var(--app-line-secondary)));
+}
+div {
+  min-width: 0;
+}
+strong,
+small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+strong {
+  font-size: var(--app-font-title);
+  line-height: var(--app-line-body);
+}
+small {
+  font-size: var(--app-font-caption);
+  line-height: var(--app-line-secondary);
+  opacity: 0.7;
+}
+ion-spinner {
+  height: 20px;
+}

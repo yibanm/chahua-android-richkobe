@@ -1,0 +1,47 @@
+@if (query().trim()) {
+  <ion-list>
+    @if (groups().length) {
+      <ion-list-header>{{ 'chats.directory.groups' | transloco }}</ion-list-header>
+    }
+    @for (group of groups(); track group.id) {
+      <ion-item [button]="true" (click)="openChat(group.id)">
+        <app-chat-avatar slot="start" [size]="40" [entry]="{ avatar: group.avatar, title: group.name }" />
+        <ion-label>
+          {{ group.name }}
+          <p>{{ group.description }}</p>
+        </ion-label>
+      </ion-item>
+    }
+    @if (cursor()) {
+      <ion-button fill="clear" [disabled]="loading()" (click)="search(true)">
+        <span class="action-content" [class.busy]="loading()">
+          <span class="action-label">{{ 'chats.directory.moreGroups' | transloco }}</span>
+          @if (loading()) {
+            <ion-spinner />
+          }
+        </span>
+      </ion-button>
+    }
+    @if (people().length) {
+      <ion-list-header>{{ 'chats.directory.users' | transloco }}</ion-list-header>
+    }
+    @for (person of people(); track person.uid) {
+      <ion-item [button]="true" (click)="profile(person)">
+        <app-chat-avatar
+          slot="start"
+          [size]="40"
+          [entry]="{ avatar: person.avatarUrl, title: person.username ?? person.uid.toString() }" />
+        <ion-label>{{ person.username || person.uid }}</ion-label>
+      </ion-item>
+    }
+  </ion-list>
+  @if (loading() && cursor() == null) {
+    <div class="page-loading"><ion-spinner /></div>
+  } @else if (error()) {
+    <app-load-error compact [message]="'chats.directory.failed' | transloco" (retry)="search()" />
+  } @else if (!groups().length && !people().length) {
+    <p class="ion-padding ion-text-center">{{ 'chats.directory.noResults' | transloco }}</p>
+  }
+} @else {
+  <p class="ion-padding ion-text-center">{{ 'chats.directory.prompt' | transloco }}</p>
+}

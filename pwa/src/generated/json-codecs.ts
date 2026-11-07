@@ -1,0 +1,1121 @@
+/** Generated from the API contract by scripts/api-codegen.ts. */
+export type JsonCodec = 0 | 1 | string | [JsonCodec] | { [field: string]: JsonCodec };
+export interface JsonOperationCodec {
+  method: string;
+  path: string;
+  body?: JsonCodec;
+  response?: JsonCodec;
+  query?: Record<string, JsonCodec>;
+}
+export const jsonSchemas: Record<string, JsonCodec> = {
+  AcknowledgeReactionsBody: {
+    threadId: 1,
+  },
+  AttachmentResponse: {
+    id: 1,
+  },
+  AvatarUploadUrlResponse: {
+    imageId: 1,
+  },
+  BulkDeleteMessagesBody: {
+    messageIds: [1],
+  },
+  BulkDeletedPayload: {
+    chatId: 1,
+    messageIds: [1],
+    threadRootIds: [1],
+  },
+  ChatArchiveStateChangedPayload: {
+    chatId: 1,
+  },
+  ChatAttachmentResponse: {
+    id: 1,
+    messageId: 1,
+  },
+  ChatListItem: {
+    id: 1,
+    lastMessage: 'MessagePreview',
+    lastReadMessageId: 1,
+    peerLastReadMessageId: 1,
+  },
+  ChatMembershipChangedPayload: {
+    chatId: 1,
+  },
+  ChatNotificationSettingResponse: {
+    chatId: 1,
+  },
+  ConversationRef: {
+    chatId: 1,
+    threadId: 1,
+  },
+  ConversationSelector: {
+    exclude: ['ConversationRef'],
+    include: ['ConversationRef'],
+  },
+  ConversationState: {
+    chatId: 1,
+    threadId: 1,
+    lastReadMessageId: 1,
+  },
+  ConversationStatesPayload: {
+    states: ['ConversationState'],
+  },
+  ConversationView: {
+    selector: 'ConversationSelector',
+  },
+  CreateChatResponse: {
+    id: 1,
+  },
+  CreateInviteBody: {
+    chatId: 1,
+  },
+  CreateMessageBody: {
+    attachmentIds: [1],
+    replyToId: 1,
+    stickerId: 1,
+  },
+  CreatePinBody: {
+    messageId: 1,
+  },
+  CreateServiceTokenResponse: {
+    serviceToken: 'ServiceTokenResponse',
+  },
+  ExternalCreateInviteRequest: {
+    chatId: 1,
+  },
+  ExternalCreateInviteResponse: {
+    chat: 'ExternalInviteChatResponse',
+    invite: 'InviteResponse',
+  },
+  ExternalInviteChatResponse: {
+    avatarImageId: 1,
+    id: 1,
+  },
+  FavoriteStickerListResponse: {
+    stickers: ['StickerSummary'],
+  },
+  ForwardMessageBody: {
+    sourceChatId: 1,
+    threadId: 1,
+  },
+  ForwardMessagesBody: {
+    messageIds: [1],
+    sourceChatId: 1,
+    threadId: 1,
+  },
+  ForwardedFromInfo: {
+    originalChatId: 1,
+    originalMessageId: 1,
+    originalReplyTo: 'MessagePreview',
+  },
+  ForwardedMessagePreviewResponse: {
+    originalChatId: 1,
+    originalMessageId: 1,
+  },
+  ForwardedMessageResponse: {
+    attachments: ['AttachmentResponse'],
+    forwardedBundleId: 1,
+    forwardedPreview: 'ForwardedMessagesPreviewResponse',
+    originalChatId: 1,
+    originalMessageId: 1,
+    reply: 'ForwardedReplyResponse',
+    sticker: 'MessageStickerResponse',
+  },
+  ForwardedMessagesPreviewResponse: {
+    messages: ['ForwardedMessagePreviewResponse'],
+  },
+  ForwardedMessagesResponse: {
+    messages: ['ForwardedMessageResponse'],
+  },
+  ForwardedReplyResponse: {
+    originalMessageId: 1,
+    preview: 'ForwardedMessagePreviewResponse',
+  },
+  FriendRequestHistoryEntry: {
+    id: 1,
+  },
+  FriendRequestResolvedPayload: {
+    requestId: 1,
+  },
+  FriendRequestResponse: {
+    id: 1,
+  },
+  GroupInfoResponse: {
+    id: 1,
+  },
+  GroupPresenceResponse: {
+    chatId: 1,
+  },
+  GroupSelectorItem: {
+    id: 1,
+  },
+  GroupSpeakingModeResponse: {
+    chatId: 1,
+  },
+  InvitePreviewResponse: {
+    chat: 'GroupInfoResponse',
+    invite: 'InviteResponse',
+  },
+  InviteResponse: {
+    chatId: 1,
+    id: 1,
+  },
+  ListChatAttachmentsResponse: {
+    attachments: ['ChatAttachmentResponse'],
+    newerCursor: 1,
+    olderCursor: 1,
+  },
+  ListChatThreadsResponse: {
+    nextCursor: 1,
+    threads: ['MessageResponse'],
+  },
+  ListChatsResponse: {
+    chats: ['ChatListItem'],
+    nextCursor: 1,
+  },
+  ListFriendRequestHistoryResponse: {
+    requests: ['FriendRequestHistoryEntry'],
+  },
+  ListGroupsResponse: {
+    groups: ['GroupSelectorItem'],
+    nextCursor: 1,
+  },
+  ListInvitesResponse: {
+    invites: ['InviteResponse'],
+  },
+  ListMessagesResponse: {
+    messages: ['MessageResponse'],
+    newerCursor: 1,
+    nextCursor: 1,
+    olderCursor: 1,
+    prevCursor: 1,
+  },
+  ListPinsResponse: {
+    pins: ['PinResponse'],
+  },
+  ListSavedMessagesResponse: {
+    nextCursor: 1,
+    savedMessages: ['SavedMessageResponse'],
+  },
+  ListServiceTokensResponse: {
+    serviceTokens: ['ServiceTokenResponse'],
+  },
+  ListThreadsResponse: {
+    threads: ['ThreadListItem'],
+  },
+  MarkAsReadBody: {
+    messageId: 1,
+  },
+  MarkChatReadStateResponse: {
+    lastReadMessageId: 1,
+  },
+  MarkThreadReadBody: {
+    messageId: 1,
+  },
+  MarkThreadReadResponse: {
+    lastReadMessageId: 1,
+  },
+  MeResponse: {
+    stickerPackOrder: ['StickerPackOrderItem'],
+  },
+  MemberSpeakingModeResponse: {
+    chatId: 1,
+  },
+  MembershipMessagePolicyChanged: {
+    chatId: 1,
+  },
+  MessagePreview: {
+    id: 1,
+    systemLinks: 'SystemMessageLinks',
+  },
+  MessageResponse: {
+    attachments: ['AttachmentResponse'],
+    chatId: 1,
+    forwardedBundleId: 1,
+    forwardedFrom: 'ForwardedFromInfo',
+    forwardedPreview: 'ForwardedMessagesPreviewResponse',
+    id: 1,
+    replyRootId: 1,
+    replyToMessage: 'MessagePreview',
+    sticker: 'MessageStickerResponse',
+    systemLinks: 'SystemMessageLinks',
+  },
+  MessageStickerMediaResponse: {
+    id: 1,
+  },
+  MessageStickerResponse: {
+    id: 1,
+    media: 'MessageStickerMediaResponse',
+  },
+  NotificationException: {
+    chatId: 1,
+  },
+  NotificationExceptionsCleared: {
+    chatIds: [1],
+  },
+  NotificationExceptionsResponse: {
+    exceptions: ['NotificationException'],
+    nextCursor: 1,
+  },
+  NotificationPayload: {
+    chatId: 1,
+    messageId: 1,
+    threadRootId: 1,
+  },
+  PinResponse: {
+    chatId: 1,
+    id: 1,
+    message: 'MessageResponse',
+    threadRootId: 1,
+  },
+  PinUpdatePayload: {
+    chatId: 1,
+    messageId: 1,
+    pin: 'PinResponse',
+    pinId: 1,
+    threadRootId: 1,
+  },
+  PresenceSnapshotPayload: {
+    groups: ['GroupPresenceResponse'],
+  },
+  ReactionUpdatePayload: {
+    chatId: 1,
+    messageId: 1,
+  },
+  ReadReceiptChangedPayload: {
+    chatId: 1,
+    threadRootId: 1,
+  },
+  ReadReceiptResponse: {
+    lastReadMessageId: 1,
+  },
+  RedeemInviteResponse: {
+    chat: 'GroupInfoResponse',
+  },
+  RelationshipPendingRequest: {
+    id: 1,
+  },
+  RelationshipQueryResponse: {
+    relationships: ['RelationshipStatus'],
+  },
+  RelationshipStatus: {
+    dmChatId: 1,
+    pendingRequest: 'RelationshipPendingRequest',
+  },
+  RotateServiceTokenResponse: {
+    serviceToken: 'ServiceTokenResponse',
+  },
+  SavedAttachmentSnapshot: {
+    id: 1,
+  },
+  SavedChatSnapshot: {
+    id: 1,
+  },
+  SavedMessageResponse: {
+    attachments: ['SavedAttachmentSnapshot'],
+    chat: 'SavedChatSnapshot',
+    forwardedBundleId: 1,
+    id: 1,
+    originalChatId: 1,
+    originalMessageId: 1,
+    originalReplyToMessageId: 1,
+    originalThreadRootId: 1,
+    sticker: 'SavedStickerSnapshot',
+  },
+  SavedStickerSnapshot: {
+    id: 1,
+  },
+  SearchMessagesResponse: {
+    messages: ['MessageResponse'],
+  },
+  SendInviteMessageBody: {
+    destinationChatId: 1,
+    sourceChatId: 1,
+  },
+  SendInviteMessageResponse: {
+    invite: 'InviteResponse',
+    message: 'MessageResponse',
+  },
+  ServiceTokenResponse: {
+    id: 1,
+  },
+  StickerDetailResponse: {
+    id: 1,
+    media: 'StickersStickerMediaResponse',
+    packs: ['StickerPackSummary'],
+  },
+  StickerPackDetailResponse: {
+    id: 1,
+    previewSticker: 'StickerPackPreviewSticker',
+    stickers: ['StickerSummary'],
+  },
+  StickerPackDiscoveryItem: {
+    id: 1,
+    previewSticker: 'StickerPackPreviewSticker',
+    previewStickers: ['StickerPackPreviewSticker'],
+  },
+  StickerPackDiscoveryResponse: {
+    packs: ['StickerPackDiscoveryItem'],
+  },
+  StickerPackListResponse: {
+    packs: ['StickerPackSummary'],
+  },
+  StickerPackOrderItem: {
+    stickerPackId: 1,
+  },
+  StickerPackOrderUpdatePayload: {
+    order: ['StickerPackOrderItem'],
+  },
+  StickerPackPreviewSticker: {
+    id: 1,
+    media: 'StickersStickerMediaResponse',
+  },
+  StickerPackSummary: {
+    id: 1,
+    previewSticker: 'StickerPackPreviewSticker',
+  },
+  StickerSummary: {
+    id: 1,
+    media: 'StickersStickerMediaResponse',
+  },
+  StickersStickerMediaResponse: {
+    id: 1,
+  },
+  SystemMessageLinks: {
+    messageId: 1,
+  },
+  ThreadListItem: {
+    chatId: 1,
+    lastReadMessageId: 1,
+    lastReply: 'MessagePreview',
+    peerLastReadMessageId: 1,
+    threadRootMessage: 'MessagePreview',
+  },
+  ThreadMembershipChangedPayload: {
+    chatId: 1,
+    threadRootId: 1,
+  },
+  ThreadReadStateResponse: {
+    lastReadMessageId: 1,
+  },
+  ThreadUpdatePayload: {
+    chatId: 1,
+    threadRootId: 1,
+  },
+  UnreadMentionIdsResponse: {
+    messageIds: [1],
+  },
+  UnreadReactionIdsResponse: {
+    messageIds: [1],
+  },
+  UpdateMessageBody: {
+    attachmentIds: [1],
+  },
+  UpdateStickerPackOrderItem: {
+    stickerPackId: 1,
+  },
+  UpdateStickerPackOrderRequest: {
+    order: ['UpdateStickerPackOrderItem'],
+  },
+  UploadUrlResponse: {
+    attachmentId: 1,
+  },
+};
+export const jsonOperations: JsonOperationCodec[] = [
+  {
+    method: 'GET',
+    path: '/attachments/config',
+    response: 'AttachmentConfigResponse',
+  },
+  {
+    method: 'POST',
+    path: '/attachments/upload-url',
+    body: 'UploadUrlRequest',
+    response: 'UploadUrlResponse',
+  },
+  {
+    method: 'POST',
+    path: '/auth/dev-session',
+    body: 'DevSessionRequest',
+    response: 'AuthTokenResponse',
+  },
+  {
+    method: 'POST',
+    path: '/auth/refresh',
+    response: 'AuthTokenResponse',
+  },
+  {
+    method: 'GET',
+    path: '/blocks',
+    response: 'ListBlocksResponse',
+  },
+  {
+    method: 'POST',
+    path: '/blocks',
+    body: 'BlockRequestBody',
+  },
+  {
+    method: 'GET',
+    path: '/chats',
+    response: 'ListChatsResponse',
+    query: {
+      chatId: 1,
+      after: 1,
+    },
+  },
+  {
+    method: 'GET',
+    path: '/chats/unread',
+    response: 'UnreadCountResponse',
+  },
+  {
+    method: 'GET',
+    path: '/chats/{chat_id}/attachments',
+    response: 'ListChatAttachmentsResponse',
+    query: {
+      before: 1,
+      after: 1,
+    },
+  },
+  {
+    method: 'GET',
+    path: '/chats/{chat_id}/mentions',
+    response: 'UnreadMentionIdsResponse',
+    query: {
+      threadId: 1,
+    },
+  },
+  {
+    method: 'GET',
+    path: '/chats/{chat_id}/messages',
+    response: 'ListMessagesResponse',
+    query: {
+      before: 1,
+      around: 1,
+      after: 1,
+      threadId: 1,
+    },
+  },
+  {
+    method: 'POST',
+    path: '/chats/{chat_id}/messages',
+    body: 'CreateMessageBody',
+    response: 'MessageResponse',
+  },
+  {
+    method: 'POST',
+    path: '/chats/{chat_id}/messages/bulk-delete',
+    body: 'BulkDeleteMessagesBody',
+    response: 'BulkDeletedPayload',
+  },
+  {
+    method: 'POST',
+    path: '/chats/{chat_id}/messages/forward',
+    body: 'ForwardMessagesBody',
+    response: 'MessageResponse',
+  },
+  {
+    method: 'GET',
+    path: '/chats/{chat_id}/messages/search',
+    response: 'SearchMessagesResponse',
+  },
+  {
+    method: 'GET',
+    path: '/chats/{chat_id}/messages/{message_id}',
+    response: 'MessageResponse',
+  },
+  {
+    method: 'PATCH',
+    path: '/chats/{chat_id}/messages/{message_id}',
+    body: 'UpdateMessageBody',
+    response: 'MessageResponse',
+  },
+  {
+    method: 'POST',
+    path: '/chats/{chat_id}/messages/{message_id}/forward',
+    body: 'ForwardMessageBody',
+    response: 'MessageResponse',
+  },
+  {
+    method: 'GET',
+    path: '/chats/{chat_id}/messages/{message_id}/forwarded-bundles/{bundle_id}/messages',
+    response: 'ForwardedMessagesResponse',
+  },
+  {
+    method: 'GET',
+    path: '/chats/{chat_id}/messages/{message_id}/forwarded-messages',
+    response: 'ForwardedMessagesResponse',
+  },
+  {
+    method: 'GET',
+    path: '/chats/{chat_id}/messages/{message_id}/reactions',
+    response: 'ReactionDetailResponse',
+  },
+  {
+    method: 'GET',
+    path: '/chats/{chat_id}/pins',
+    response: 'ListPinsResponse',
+  },
+  {
+    method: 'POST',
+    path: '/chats/{chat_id}/pins',
+    body: 'CreatePinBody',
+    response: 'PinResponse',
+  },
+  {
+    method: 'GET',
+    path: '/chats/{chat_id}/reactions',
+    response: 'UnreadReactionIdsResponse',
+    query: {
+      threadId: 1,
+    },
+  },
+  {
+    method: 'POST',
+    path: '/chats/{chat_id}/reactions/read',
+    body: 'AcknowledgeReactionsBody',
+    response: 'UnreadReactionsAckResponse',
+  },
+  {
+    method: 'POST',
+    path: '/chats/{chat_id}/read',
+    body: 'MarkAsReadBody',
+    response: 'MarkChatReadStateResponse',
+  },
+  {
+    method: 'GET',
+    path: '/chats/{chat_id}/read-receipt',
+    response: 'ReadReceiptResponse',
+    query: {
+      threadId: 1,
+    },
+  },
+  {
+    method: 'GET',
+    path: '/chats/{chat_id}/saved-messages',
+    response: 'ListSavedMessagesResponse',
+    query: {
+      before: 1,
+    },
+  },
+  {
+    method: 'GET',
+    path: '/chats/{chat_id}/threads',
+    response: 'ListChatThreadsResponse',
+    query: {
+      cursor: 1,
+    },
+  },
+  {
+    method: 'POST',
+    path: '/chats/{chat_id}/threads/{thread_id}/messages',
+    body: 'CreateMessageBody',
+    response: 'MessageResponse',
+  },
+  {
+    method: 'GET',
+    path: '/chats/{chat_id}/threads/{thread_root_id}/participants',
+    response: 'ListThreadParticipantsResponse',
+  },
+  {
+    method: 'GET',
+    path: '/chats/{chat_id}/threads/{thread_root_id}/pins',
+    response: 'ListPinsResponse',
+  },
+  {
+    method: 'POST',
+    path: '/chats/{chat_id}/threads/{thread_root_id}/pins',
+    body: 'CreatePinBody',
+    response: 'PinResponse',
+  },
+  {
+    method: 'POST',
+    path: '/chats/{chat_id}/threads/{thread_root_id}/read',
+    body: 'MarkThreadReadBody',
+    response: 'MarkThreadReadResponse',
+  },
+  {
+    method: 'GET',
+    path: '/chats/{chat_id}/threads/{thread_root_id}/read-state',
+    response: 'ThreadReadStateResponse',
+  },
+  {
+    method: 'GET',
+    path: '/chats/{chat_id}/threads/{thread_root_id}/subscribe',
+    response: 'ThreadSubscriptionStatusResponse',
+  },
+  {
+    method: 'GET',
+    path: '/chats/{chat_id}/unread',
+    response: 'MarkChatReadStateResponse',
+  },
+  {
+    method: 'POST',
+    path: '/chats/{chat_id}/unread',
+    body: 'MarkAsUnreadBody',
+    response: 'MarkChatReadStateResponse',
+  },
+  {
+    method: 'POST',
+    path: '/external/invites',
+    body: 'ExternalCreateInviteRequest',
+    response: 'ExternalCreateInviteResponse',
+  },
+  {
+    method: 'GET',
+    path: '/external/sessions/{uid}',
+    response: 'SessionGenerationResponse',
+  },
+  {
+    method: 'POST',
+    path: '/external/sessions/{uid}/revoke',
+    response: 'SessionGenerationResponse',
+  },
+  {
+    method: 'POST',
+    path: '/external/social/relationships',
+    body: 'RelationshipQueryRequest',
+    response: 'RelationshipQueryResponse',
+  },
+  {
+    method: 'GET',
+    path: '/friends',
+    response: 'ListFriendsResponse',
+  },
+  {
+    method: 'GET',
+    path: '/friends/add-info/{uid}',
+    response: 'FriendAddInfoResponse',
+  },
+  {
+    method: 'GET',
+    path: '/friends/me/settings',
+    response: 'FriendSettingsResponse',
+  },
+  {
+    method: 'PUT',
+    path: '/friends/me/settings',
+    body: 'UpdateFriendSettingsBody',
+    response: 'FriendSettingsResponse',
+  },
+  {
+    method: 'GET',
+    path: '/friends/requests',
+    response: 'ListFriendRequestHistoryResponse',
+  },
+  {
+    method: 'POST',
+    path: '/friends/requests',
+    body: 'CreateFriendRequestBody',
+    response: 'FriendRequestResponse',
+  },
+  {
+    method: 'GET',
+    path: '/friends/requests/pending/count',
+    response: 'PendingFriendRequestCountResponse',
+  },
+  {
+    method: 'POST',
+    path: '/friends/requests/{request_id}/accept',
+    response: 'FriendRequestResponse',
+  },
+  {
+    method: 'POST',
+    path: '/friends/requests/{request_id}/reject',
+    response: 'FriendRequestResponse',
+  },
+  {
+    method: 'GET',
+    path: '/friends/{uid}',
+    response: 'FriendRelationshipResponse',
+  },
+  {
+    method: 'GET',
+    path: '/friends/{uid}/presence-settings',
+    response: 'FriendPresenceSettingsResponse',
+  },
+  {
+    method: 'PUT',
+    path: '/friends/{uid}/presence-settings',
+    body: 'UpdateFriendPresenceSettingsBody',
+    response: 'FriendPresenceSettingsResponse',
+  },
+  {
+    method: 'GET',
+    path: '/friends/{uid}/read-receipt-settings',
+    response: 'FriendReadReceiptSettingsResponse',
+  },
+  {
+    method: 'PUT',
+    path: '/friends/{uid}/read-receipt-settings',
+    body: 'UpdateFriendReadReceiptSettingsBody',
+    response: 'FriendReadReceiptSettingsResponse',
+  },
+  {
+    method: 'GET',
+    path: '/group',
+    response: 'ListGroupsResponse',
+    query: {
+      after: 1,
+    },
+  },
+  {
+    method: 'POST',
+    path: '/group',
+    body: 'CreateChatBody',
+    response: 'CreateChatResponse',
+  },
+  {
+    method: 'GET',
+    path: '/group/{chat_id}',
+    response: 'GroupInfoResponse',
+  },
+  {
+    method: 'PATCH',
+    path: '/group/{chat_id}',
+    body: 'UpdateChatBody',
+    response: 'GroupInfoResponse',
+  },
+  {
+    method: 'POST',
+    path: '/group/{chat_id}/avatar/upload-url',
+    body: 'AvatarUploadUrlRequest',
+    response: 'AvatarUploadUrlResponse',
+  },
+  {
+    method: 'GET',
+    path: '/group/{chat_id}/members',
+    response: 'ListMembersResponse',
+  },
+  {
+    method: 'POST',
+    path: '/group/{chat_id}/members',
+    body: 'AddMemberBody',
+    response: 'MemberResponse',
+  },
+  {
+    method: 'PATCH',
+    path: '/group/{chat_id}/members/{uid}',
+    body: 'UpdateMemberBody',
+    response: 'MemberResponse',
+  },
+  {
+    method: 'PUT',
+    path: '/group/{chat_id}/members/{uid}/speaking-mode',
+    body: 'UpdateSpeakingModeRequest',
+    response: 'MemberSpeakingModeResponse',
+  },
+  {
+    method: 'PUT',
+    path: '/group/{chat_id}/mute',
+    body: 'MuteBody',
+    response: 'MuteResponse',
+  },
+  {
+    method: 'PUT',
+    path: '/group/{chat_id}/notification-setting',
+    body: 'UpdateNotificationSettingRequest',
+    response: 'ChatNotificationSettingResponse',
+  },
+  {
+    method: 'PUT',
+    path: '/group/{chat_id}/speaking-mode',
+    body: 'UpdateSpeakingModeRequest',
+    response: 'GroupSpeakingModeResponse',
+  },
+  {
+    method: 'GET',
+    path: '/invites',
+    response: 'ListInvitesResponse',
+    query: {
+      groupId: 1,
+    },
+  },
+  {
+    method: 'POST',
+    path: '/invites',
+    body: 'CreateInviteBody',
+    response: 'InviteResponse',
+  },
+  {
+    method: 'GET',
+    path: '/invites/invite',
+    response: 'InvitePreviewResponse',
+  },
+  {
+    method: 'GET',
+    path: '/invites/invite/{invite_id}',
+    response: 'InviteResponse',
+  },
+  {
+    method: 'PATCH',
+    path: '/invites/invite/{invite_id}',
+    body: 'PatchInviteBody',
+    response: 'InviteResponse',
+  },
+  {
+    method: 'POST',
+    path: '/invites/redeem',
+    body: 'RedeemInviteBody',
+    response: 'RedeemInviteResponse',
+  },
+  {
+    method: 'POST',
+    path: '/invites/send',
+    body: 'SendInviteMessageBody',
+    response: 'SendInviteMessageResponse',
+  },
+  {
+    method: 'GET',
+    path: '/me/presence-settings',
+    response: 'PresenceSettingsResponse',
+  },
+  {
+    method: 'PUT',
+    path: '/me/presence-settings',
+    body: 'UpdatePresenceSettingsBody',
+    response: 'PresenceSettingsResponse',
+  },
+  {
+    method: 'GET',
+    path: '/me/privacy-exceptions',
+    response: 'PrivacyExceptionsResponse',
+  },
+  {
+    method: 'GET',
+    path: '/me/read-receipt-settings',
+    response: 'ReadReceiptSettingsResponse',
+  },
+  {
+    method: 'PUT',
+    path: '/me/read-receipt-settings',
+    body: 'UpdateReadReceiptSettingsBody',
+    response: 'ReadReceiptSettingsResponse',
+  },
+  {
+    method: 'POST',
+    path: '/push/subscribe',
+    body: 'SubscribeBody',
+  },
+  {
+    method: 'GET',
+    path: '/push/subscription-status',
+    response: 'SubscriptionStatusResponse',
+  },
+  {
+    method: 'POST',
+    path: '/push/unsubscribe',
+    body: 'UnsubscribeBody',
+  },
+  {
+    method: 'GET',
+    path: '/push/vapid-public-key',
+    response: 'VapidPublicKeyResponse',
+  },
+  {
+    method: 'GET',
+    path: '/saved-messages',
+    response: 'ListSavedMessagesResponse',
+    query: {
+      before: 1,
+    },
+  },
+  {
+    method: 'PUT',
+    path: '/saved-messages/{message_id}',
+    response: 'SavedMessageResponse',
+  },
+  {
+    method: 'GET',
+    path: '/saved-messages/{saved_message_id}/forwarded-bundles/{bundle_id}/messages',
+    response: 'ForwardedMessagesResponse',
+  },
+  {
+    method: 'GET',
+    path: '/saved-messages/{saved_message_id}/forwarded-messages',
+    response: 'ForwardedMessagesResponse',
+  },
+  {
+    method: 'GET',
+    path: '/service-tokens',
+    response: 'ListServiceTokensResponse',
+  },
+  {
+    method: 'POST',
+    path: '/service-tokens',
+    body: 'CreateServiceTokenRequest',
+    response: 'CreateServiceTokenResponse',
+  },
+  {
+    method: 'POST',
+    path: '/service-tokens/{id}/rotate',
+    response: 'RotateServiceTokenResponse',
+  },
+  {
+    method: 'GET',
+    path: '/stickers/mine/favorites',
+    response: 'FavoriteStickerListResponse',
+  },
+  {
+    method: 'GET',
+    path: '/stickers/packs',
+    response: 'StickerPackDiscoveryResponse',
+  },
+  {
+    method: 'POST',
+    path: '/stickers/packs',
+    body: 'CreateStickerPackBody',
+    response: 'StickerPackSummary',
+  },
+  {
+    method: 'GET',
+    path: '/stickers/packs/mine/owned',
+    response: 'StickerPackListResponse',
+  },
+  {
+    method: 'GET',
+    path: '/stickers/packs/mine/subscribed',
+    response: 'StickerPackListResponse',
+  },
+  {
+    method: 'GET',
+    path: '/stickers/packs/{pack_id}',
+    response: 'StickerPackDetailResponse',
+  },
+  {
+    method: 'PATCH',
+    path: '/stickers/packs/{pack_id}',
+    body: 'UpdateStickerPackBody',
+    response: 'StickerPackSummary',
+  },
+  {
+    method: 'POST',
+    path: '/stickers/packs/{pack_id}/stickers',
+    response: 'StickerSummary',
+  },
+  {
+    method: 'GET',
+    path: '/stickers/{sticker_id}',
+    response: 'StickerDetailResponse',
+  },
+  {
+    method: 'GET',
+    path: '/threads',
+    response: 'ListThreadsResponse',
+    query: {
+      rootId: 1,
+    },
+  },
+  {
+    method: 'GET',
+    path: '/threads/unread',
+    response: 'UnreadThreadCountResponse',
+  },
+  {
+    method: 'POST',
+    path: '/threads/{thread_root_id}/read',
+    body: 'MarkThreadReadBody',
+    response: 'MarkThreadReadResponse',
+  },
+  {
+    method: 'GET',
+    path: '/threads/{thread_root_id}/read-state',
+    response: 'ThreadReadStateResponse',
+  },
+  {
+    method: 'GET',
+    path: '/users/auth-token',
+    response: 'AuthTokenResponse',
+  },
+  {
+    method: 'GET',
+    path: '/users/me',
+    response: 'MeResponse',
+  },
+  {
+    method: 'PUT',
+    path: '/users/me/chat-settings',
+    body: 'UpdateChatSettings',
+    response: 'ChatSettings',
+  },
+  {
+    method: 'GET',
+    path: '/users/me/notification-exceptions',
+    response: 'NotificationExceptionsResponse',
+    query: {
+      after: 1,
+    },
+  },
+  {
+    method: 'DELETE',
+    path: '/users/me/notification-exceptions',
+    response: 'NotificationExceptionsCleared',
+  },
+  {
+    method: 'GET',
+    path: '/users/me/notification-settings',
+    response: 'NotificationSettingsResponse',
+  },
+  {
+    method: 'PATCH',
+    path: '/users/me/notification-settings',
+    body: 'UpdateNotificationSettingsRequest',
+    response: 'NotificationSettingsResponse',
+  },
+  {
+    method: 'PUT',
+    path: '/users/me/stickerpack-order',
+    body: 'UpdateStickerPackOrderRequest',
+  },
+  {
+    method: 'GET',
+    path: '/users/search',
+    response: 'SearchUsersResponse',
+    query: {
+      excludeMemberOf: 1,
+    },
+  },
+  {
+    method: 'GET',
+    path: '/ws/clients',
+    response: ['OnlineClientConnectionResponse'],
+  },
+  {
+    method: 'GET',
+    path: '/ws/ticket',
+    response: 'TicketResponse',
+  },
+];
+export const wsPayloadCodecs: Record<string, JsonCodec> = {
+  chatMembershipChanged: 'ChatMembershipChangedPayload',
+  membershipMessagePolicyChanged: 'MembershipMessagePolicyChanged',
+  message: 'MessageResponse',
+  messageUpdated: 'MessageResponse',
+  messageDeleted: 'MessageResponse',
+  messagesBulkDeleted: 'BulkDeletedPayload',
+  reactionUpdated: 'ReactionUpdatePayload',
+  presenceUpdate: 'PresenceUpdatePayload',
+  presenceSnapshot: 'PresenceSnapshotPayload',
+  conversationUnread: 'ConversationUnreadPayload',
+  conversationStates: 'ConversationStatesPayload',
+  conversationStatesError: 'ConversationUnreadErrorPayload',
+  conversationUnreadError: 'ConversationUnreadErrorPayload',
+  threadUpdate: 'ThreadUpdatePayload',
+  threadMembershipChanged: 'ThreadMembershipChangedPayload',
+  chatArchiveStateChanged: 'ChatArchiveStateChangedPayload',
+  notificationExceptionsCleared: 'NotificationExceptionsCleared',
+  notificationSettingsChanged: 'NotificationSettingsResponse',
+  chatNotificationSettingChanged: 'ChatNotificationSettingResponse',
+  groupSpeakingModeChanged: 'GroupSpeakingModeResponse',
+  memberSpeakingModeChanged: 'MemberSpeakingModeResponse',
+  readReceiptChanged: 'ReadReceiptChangedPayload',
+  pinAdded: 'PinUpdatePayload',
+  threadPinAdded: 'PinUpdatePayload',
+  pinRemoved: 'PinUpdatePayload',
+  threadPinRemoved: 'PinUpdatePayload',
+  stickerPackOrderUpdated: 'StickerPackOrderUpdatePayload',
+  friendRequestReceived: 'FriendRequestReceivedPayload',
+  friendRequestResolved: 'FriendRequestResolvedPayload',
+  friendshipRemoved: 'FriendshipRemovedPayload',
+  notification: 'NotificationPayload',
+};

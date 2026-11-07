@@ -1,0 +1,87 @@
+<ion-header>
+  <ion-toolbar>
+    <ion-buttons slot="start">
+      <ion-button (click)="panels.back()">
+        <ion-icon slot="icon-only" [icon]="backIcon"></ion-icon>
+      </ion-button>
+    </ion-buttons>
+    <ion-title>{{ pack()?.name || ('settings.stickerPack.title' | transloco) }}</ion-title>
+    <ion-buttons slot="end">
+      @if (pack(); as pack) {
+        @if (owned()) {
+          <ion-button [disabled]="busy()" (click)="rename()">
+            <ion-icon slot="icon-only" [icon]="icons.createOutline"></ion-icon>
+          </ion-button>
+          <ion-button [disabled]="busy()" color="danger" (click)="deletePack()">
+            <ion-icon slot="icon-only" [icon]="icons.trashOutline"></ion-icon>
+          </ion-button>
+        } @else {
+          <ion-button [disabled]="busy()" color="danger" (click)="unsubscribe()">
+            {{ 'settings.stickerPack.unsubscribe' | transloco }}
+          </ion-button>
+        }
+      }
+    </ion-buttons>
+  </ion-toolbar>
+  @if (pack() && busy()) {
+    <ion-progress-bar type="indeterminate" />
+  }
+</ion-header>
+<ion-content appScrollbars color="light">
+  @if (pack(); as current) {
+    <input #stickerFile type="file" accept="image/*,video/webm" hidden (change)="upload($event)" />
+    @if (owned()) {
+      <p class="hint">{{ 'settings.stickerPack.removeHint' | transloco }}</p>
+    }
+    <div class="grid">
+      @if (owned()) {
+        <button type="button" class="cell add" [disabled]="busy()" (click)="stickerFile.click()">+</button>
+      }
+      @for (sticker of current.stickers; track sticker.id) {
+        <button type="button" class="cell" [disabled]="!owned() || busy()" (click)="removeSticker(sticker)">
+          <span class="cell-skeleton skeleton-block"></span>
+          @if (sticker.media.contentType.startsWith('video/')) {
+            <video
+              appMediaLoaded
+              [src]="sticker.media.url"
+              autoplay
+              loop
+              [muted]="true"
+              playsinline
+              preload="metadata"></video>
+          } @else {
+            <img appMediaLoaded [src]="sticker.media.url" loading="lazy" decoding="async" />
+          }
+          @if (owned()) {
+            <span class="remove">✕</span>
+          }
+        </button>
+      }
+    </div>
+  } @else if (error()) {
+    <app-load-error [message]="'common.loadFailed' | transloco" (retry)="retry()" />
+  } @else {
+    <div class="page-loading"><ion-spinner /></div>
+  }
+</ion-content>
+<ion-toast [isOpen]="!!notice()" [message]="notice()" [duration]="2500" (didDismiss)="notice.set(undefined)" />
+
+@if (renaming()) {
+  <app-sticker-editor
+    [title]="'settings.stickerPack.renameTitle' | transloco"
+    [initialName]="pack()!.name"
+    [initialVisibility]="pack()!.visibility"
+    [busy]="busy()"
+    [error]="editorError()"
+    (confirmed)="saveName($event)"
+    (closed)="renaming.set(false)" />
+}
+@if (uploadFile()) {
+  <app-sticker-editor
+    [title]="'stickers.addTitle' | transloco"
+    [withEmoji]="true"
+    [busy]="busy()"
+    [error]="editorError()"
+    (confirmed)="saveSticker($event)"
+    (closed)="uploadFile.set(undefined)" />
+}

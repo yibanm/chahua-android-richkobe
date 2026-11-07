@@ -1,0 +1,69 @@
+@if (active()) {
+  <div class="voice-display">
+    @if (phase() === Phase.Recorded) {
+      <span class="timer">{{ elapsed() }}</span>
+      <app-voice-player [src]="url()!" />
+      <button type="button" class="delete" (click)="discard()">
+        <ion-icon [icon]="icons.trash" />
+      </button>
+    } @else {
+      @if (phase() === Phase.Requesting) {
+        <ion-spinner />
+      } @else {
+        <span class="recording-dot"></span>
+      }
+      <span class="timer">{{ elapsed() }}</span>
+      <span class="hint">{{ 'messages.voice.holdToSave' | transloco }}</span>
+    }
+  </div>
+}
+<div class="action-slot">
+  @if (phase() === Phase.Recorded) {
+    <button type="button" class="round send" [disabled]="disabled()" (click)="send()">
+      <ion-icon [icon]="icons.send" />
+    </button>
+  } @else {
+    <div
+      class="record-button"
+      [class.holding]="holding()"
+      [class.cancel]="target() === Target.Cancel"
+      [class.send-target]="target() === Target.Send">
+      <span class="target left"><ion-icon [icon]="icons.trash" /></span>
+      <span class="target top"><ion-icon [icon]="icons.arrowUp" /></span>
+      <button
+        type="button"
+        class="round microphone"
+        [disabled]="disabled() && !active()"
+        (click)="!available && failure.set(Failure.Unsupported)"
+        (pointerdown)="start($event)"
+        (pointermove)="move($event)"
+        (pointerup)="finish($event)"
+        (pointercancel)="finish($event, true)"
+        (contextmenu)="$event.preventDefault()">
+        <ion-icon
+          [icon]="
+            target() === Target.Cancel
+              ? icons.trash
+              : target() === Target.Send
+                ? icons.arrowUp
+                : available
+                  ? icons.micOutline
+                  : icons.micOffOutline
+          " />
+      </button>
+    </div>
+  }
+</div>
+@if (tooShort()) {
+  <div class="voice-error">{{ 'messages.voice.tooShort' | transloco }}</div>
+}
+<ion-alert
+  [isOpen]="failure() != null"
+  [header]="'messages.voice.errorTitle' | transloco"
+  [message]="
+    failure() === Failure.Unsupported
+      ? ('messages.voice.unsupported' | transloco)
+      : ('messages.voice.permission' | transloco)
+  "
+  [buttons]="['common.ok' | transloco]"
+  (didDismiss)="failure.set(undefined)" />

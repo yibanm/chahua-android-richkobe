@@ -1,0 +1,853 @@
+{
+  "app": {
+    "updateReady": "新版本已準備好",
+    "updateLater": "暫不更新",
+    "updateNow": "立即更新",
+    "name": "茶話",
+    "entry": {
+      "reload": "重新載入",
+      "loading": {
+        "title": "",
+        "description": ""
+      },
+      "slow": {
+        "title": "連線比平時慢",
+        "description": "仍在嘗試連線。可以繼續等待，或重新載入整個應用程式。"
+      },
+      "missing": {
+        "title": "請重新進入茶話",
+        "description": "目前沒有登入資訊，請前往茶話發布帖重新進入。"
+      },
+      "expired": {
+        "title": "登入狀態已失效",
+        "description": "請前往茶話發布帖重新進入。"
+      },
+      "network": {
+        "title": "暫時無法連線至茶話",
+        "description": "連線失敗或等待逾時，請檢查網路後重試。"
+      },
+      "server": {
+        "title": "茶話暫時無法使用",
+        "description": "服務暫時遇到問題，請稍後重試。"
+      },
+      "failed": {
+        "title": "暫時無法進入茶話",
+        "description": "登入檢查未能完成，請重試；如果仍然失敗，請前往茶話發布帖查看說明。"
+      },
+      "boot": {
+        "title": "",
+        "description": ""
+      },
+      "bootSlow": {
+        "title": "載入時間較長",
+        "description": "應用程式尚未完成載入。可以繼續等待，或重新載入整個應用程式。"
+      },
+      "bootFailed": {
+        "title": "應用程式載入遇到問題",
+        "description": ""
+      },
+      "pasteHint": "貼上 JWT 權杖或帶 token 的進入連結",
+      "pastePlaceholder": "貼上你的登入權杖",
+      "pasteSubmit": "登入",
+      "pasteInvalid": "內容無效：需要是帶 token 的連結或 JWT 權杖",
+      "manualLogin": "手動登入",
+      "oneClick": "一鍵登入",
+      "pwaFound": "已識別到瀏覽器裡茶話網頁版的登入資訊，正在自動登入（5 秒內完成，失敗會給出指引）……",
+      "pwaMissing": "未識別到瀏覽器裡的茶話登入資訊。請先在 Edge 裡開啟茶話網頁版登入一次；或用 CookieXport 擴充功能右鍵茶話網頁匯出 Cookie，複製其中的 JWT，點「手動登入」貼上。",
+      "scanning": "正在識別瀏覽器登入資訊……",
+      "passwordLogin": "帳號密碼登入",
+      "passwordHint": "使用你的論壇帳號登入",
+      "passwordUsername": "論壇使用者名稱",
+      "passwordField": "密碼",
+      "passwordSubmit": "登入",
+      "passwordEmpty": "請填寫使用者名稱與密碼",
+      "passwordWrong": "使用者名稱或密碼不正確",
+      "passwordFailed": "登入失敗，請檢查網路後重試"
+    },
+    "updatePendingMessages": "仍有未傳送的訊息，更新將遺失這些工作。",
+    "updateAnyway": "仍然更新"
+  },
+  "common": {
+    "done": "完成",
+    "save": "儲存",
+    "saved": "已儲存",
+    "cancel": "取消",
+    "create": "建立",
+    "delete": "刪除",
+    "remove": "移除",
+    "upload": "上傳",
+    "ok": "知道了",
+    "retry": "重試",
+    "loadFailed": "載入失敗，請重試。",
+    "name": "名稱",
+    "close": "關閉",
+    "confirm": "確認",
+    "add": "新增",
+    "okay": "好",
+    "user": "使用者",
+    "enabled": "開啟",
+    "disabled": "關閉",
+    "saving": "儲存中…"
+  },
+  "presence": {
+    "online": "在線",
+    "groupCounts": "{{ online }} 人在線 · 共 {{ members }} 人",
+    "lastSeen": {
+      "recently": "最近上線",
+      "withinWeek": "1 週內上線",
+      "withinMonth": "1 個月內上線",
+      "longAgo": "很久沒上線",
+      "today": "最近上線於今天 {{ time }}",
+      "yesterday": "最近上線於昨天 {{ time }}",
+      "date": "最近上線於 {{ date }} {{ time }}",
+      "justNow": "剛剛上線",
+      "minute": "最近上線於 {{ count }} 分鐘前",
+      "minutes": "最近上線於 {{ count }} 分鐘前",
+      "hour": "最近上線於 {{ count }} 小時前",
+      "hours": "最近上線於 {{ count }} 小時前"
+    },
+    "away": "離開"
+  },
+  "settings": {
+    "title": "設定",
+    "menu": {
+      "general": "一般",
+      "saved": "我的收藏",
+      "friendVerification": "好友驗證",
+      "presence": "在線狀態隱私",
+      "readReceipts": "已讀回條",
+      "stickers": "表情和貼紙",
+      "notifications": "訊息通知",
+      "notificationsUnsupported": "不支援",
+      "pushRegisterFailed": "背景推播註冊失敗",
+      "tryAgain": "請重試",
+      "checkUpdates": "檢查更新",
+      "upToDate": "已是最新版本",
+      "updateCheckFailed": "檢查失敗，請重試",
+      "updateNow": "立即更新",
+      "notificationDenied": "未授予通知權限",
+      "devUid": "開發 UID",
+      "devUidSwitch": "切換",
+      "privacy": "隱私",
+      "requestNotifications": "申請通知權限",
+      "testNotification": "傳送測試通知",
+      "testNotificationTitle": "茶話",
+      "testNotificationBody": "這是一則測試通知，能看到它代表通知已開啟。",
+      "notificationBlockedHelpDesktop": "系統未允許茶話傳送通知。請在 Windows「設定 → 系統 → 通知」中允許本應用程式，並確認未開啟勿擾模式，然後返回此頁面。",
+      "install": "安裝應用程式",
+      "notificationBlockedHelp": "通知權限已被拒絕。請在瀏覽器的網站設定中允許通知，然後返回此頁面。",
+      "notificationWorkerUnavailable": "通知服務暫不可用，請重試。",
+      "notificationDisableFailed": "關閉背景推播失敗，請重試。",
+      "logout": "登出",
+      "changeAvatar": "更換頭像",
+      "openSource": "開源專案"
+    },
+    "general": {
+      "title": "聊天設定",
+      "language": "語言",
+      "showThreads": "在訊息中顯示「話題」",
+      "showAllAvatars": "在所有訊息旁顯示頭像",
+      "showDmDetails": "在私聊中顯示雙方頭像和使用者名稱",
+      "colorMode": "顏色模式",
+      "colorModeSystem": "跟隨系統",
+      "colorModeLight": "淺色",
+      "colorModeDark": "深色",
+      "fontSize": "字級",
+      "fontSmall": "小",
+      "fontLarge": "大",
+      "fontPreviewIncoming": "這是聊天訊息的預覽，拖動滑桿試試不同的字級。",
+      "fontPreviewOutgoing": "選擇一個閱讀起來舒服的大小。",
+      "fontDefault": "系統預設",
+      "showMembershipMessages": "顯示群成員進出群訊息",
+      "saveFailed": "儲存失敗，請重試。",
+      "antiRecall": "防撤回：在本機保留被撤回訊息的原文"
+    },
+    "language": {
+      "title": "語言",
+      "auto": "自動",
+      "saveFailed": "語言切換失敗，請重試。"
+    },
+    "friendVerification": {
+      "title": "加我好友時的驗證方式",
+      "loadFailed": "好友驗證設定載入失敗。",
+      "allowAnyone": "允許任何人",
+      "needMessage": "需要驗證訊息",
+      "needQuestion": "需要回答問題並由我確認",
+      "forbid": "禁止加我為好友",
+      "questionLabel": "設定問題",
+      "questionPlaceholder": "填寫申請者需要回答的問題",
+      "questionInvalid": "請填寫 1–100 字的問題。",
+      "saveFailed": "儲存失敗，請重試。",
+      "apply": "套用",
+      "discardTitle": "放棄未儲存的修改？",
+      "discard": "放棄修改"
+    },
+    "presence": {
+      "title": "誰能查看我的活動狀態",
+      "loadFailed": "在線狀態載入失敗，點擊重試",
+      "everyone": "所有人",
+      "friends": "我的好友",
+      "nobody": "不允許任何人",
+      "reciprocalNote": "僅在雙方都允許分享時顯示在線狀態和精確上線時間，否則顯示模糊的最近上線時間；群組在線人數不受影響。",
+      "saveFailed": "儲存失敗，請重試。",
+      "friendTitle": "在線狀態分享",
+      "friendInherit": "使用全域設定",
+      "friendShare": "與這位好友分享",
+      "friendHide": "對這位好友隱藏",
+      "friendLoadFailed": "此好友的在線狀態設定載入失敗。"
+    },
+    "readReceipt": {
+      "title": "已讀回條",
+      "loadFailed": "已讀回條設定載入失敗。",
+      "reciprocalNote": "只會在雙方都允許分享時顯示已讀回條；群組對話永不顯示已讀回條。",
+      "saveFailed": "儲存失敗，請重試。",
+      "friendTitle": "已讀回條分享",
+      "friendInherit": "使用全域設定",
+      "friendShare": "與這位好友分享",
+      "friendHide": "對這位好友隱藏",
+      "friendLoadFailed": "此好友的已讀回條設定載入失敗。"
+    },
+    "stickers": {
+      "title": "表情和貼紙",
+      "pinnedReactions": "置頂表態表情 ({{ count }}/5)",
+      "autoSortPacks": "按最近使用自動排序貼紙包",
+      "autoSortFavorites": "按最近使用自動排序收藏貼紙",
+      "loadFailed": "貼紙包載入失敗。",
+      "sortDivider": "此行以下的貼紙包不會自動排序",
+      "owned": "我的",
+      "orderFailed": "貼紙排序儲存失敗，請重試。"
+    },
+    "stickerPack": {
+      "title": "貼紙包",
+      "unsubscribe": "取消訂閱",
+      "removeHint": "點按貼紙可將其從貼紙包中移除。",
+      "renameTitle": "編輯貼圖包",
+      "namePlaceholder": "貼紙包名稱",
+      "renamed": "貼紙包已重新命名",
+      "renameFailed": "儲存貼圖包失敗，請重試",
+      "visibility": "可見性",
+      "public": "公開",
+      "private": "私有",
+      "visibilityHint": "設為私有會移除其他使用者的訂閱。",
+      "deleteTitle": "刪除貼紙包",
+      "deleteMessage": "要刪除這個表情包嗎？表情本身會保留，但這個表情包及其中的收錄關係將被移除。",
+      "deleteFailed": "刪除失敗，請重試",
+      "unsubscribeMessage": "要將這個貼紙包從你的收藏中移除嗎？",
+      "unsubscribeFailed": "取消訂閱失敗，請重試",
+      "removeStickerTitle": "移除貼紙",
+      "removeStickerMessage": "要從貼紙包中移除此表情嗎？",
+      "removeStickerFailed": "移除失敗，請重試"
+    },
+    "privacy": {
+      "blockedUsers": "已封鎖的使用者",
+      "none": "無",
+      "friendVerification": "加我為好友時的驗證方式",
+      "allowAnyone": "允許任何人",
+      "presence": "誰能查看我的活動狀態",
+      "loadFailed": "載入失敗，點擊重試",
+      "blocksLoadFailed": "封鎖使用者清單載入失敗。"
+    },
+    "privacyExceptions": {
+      "title": "例外",
+      "count": "（{{ count }} 個例外）",
+      "add": "新增例外",
+      "share": "始終分享",
+      "hide": "始終隱藏",
+      "clear": "刪除所有例外",
+      "empty": "暫無例外",
+      "search": "搜尋好友",
+      "added": "已新增",
+      "noFriends": "沒有符合的好友",
+      "clearTitle": "刪除所有例外？"
+    }
+  },
+  "chats": {
+    "list": {
+      "startChat": "開始聊天",
+      "selectConversation": "從左側選擇一個會話",
+      "searchGroupsAndUsers": "搜尋群組和使用者",
+      "friendRequests": "好友請求",
+      "archived": "已封存",
+      "tabs": {
+        "messages": "訊息",
+        "groups": "群聊",
+        "friends": "好友",
+        "threads": "話題"
+      },
+      "add": {
+        "createGroup": "建立群聊",
+        "joinGroup": "加入群聊",
+        "addFriend": "加入好友",
+        "search": "搜尋"
+      },
+      "mute": {
+        "title": "靜音通知",
+        "oneHour": "靜音 1 小時",
+        "eightHours": "靜音 8 小時",
+        "oneDay": "靜音 1 天",
+        "sevenDays": "靜音 7 天",
+        "forever": "永久"
+      }
+    },
+    "content": {
+      "archivedSubtitle": "查看已封存的會話",
+      "requestHistorySubtitle": "查看好友請求記錄",
+      "userWithUid": "使用者 {{ uid }}",
+      "requestQuestion": "問：{{ question }} · 答：{{ answer }}",
+      "friendRequest": "好友請求",
+      "friendRequestSent": "好友請求已傳送",
+      "acceptRequest": "接受來自 {{ name }} 的好友請求",
+      "rejectRequest": "拒絕來自 {{ name }} 的好友請求",
+      "archiveRequest": "封存來自 {{ name }} 的好友請求",
+      "requestAccepted": "已接受",
+      "requestRejected": "已拒絕",
+      "requestPending": "等待通過",
+      "markRead": "標為已讀",
+      "markUnread": "標為未讀",
+      "archive": "封存",
+      "unarchive": "取消封存",
+      "mute": "靜音",
+      "unmute": "取消靜音",
+      "draft": "草稿：",
+      "noReplies": "尚無回覆",
+      "noMessages": "尚無訊息",
+      "dm": "私訊",
+      "unnamedGroup": "未命名群組",
+      "emptyThreads": "尚無話題",
+      "emptyChats": "尚無會話",
+      "threadsLoadFailed": "話題載入失敗，請重新整理後重試。",
+      "chatsLoadFailed": "會話載入失敗，請重新整理後重試。",
+      "unreadLoadFailed": "更新未讀數量失敗，請重新整理後重試。",
+      "recentLoadFailed": "更新會話失敗，請下拉重新整理後重試。",
+      "moreLoadFailed": "載入更多會話失敗，請重試。"
+    },
+    "inviteStatus": {
+      "expired": "邀請已過期",
+      "revoked": "邀請已撤銷",
+      "used": "邀請已使用",
+      "neverExpires": "長期有效"
+    },
+    "start": {
+      "createTitle": "建立群聊",
+      "joinTitle": "加入群聊",
+      "friendTitle": "加入好友",
+      "searchUsers": "搜尋使用者名稱或 UID",
+      "groupName": "群聊名稱",
+      "inviteCode": "邀請碼或邀請連結",
+      "viewInvite": "查看邀請",
+      "submitCreate": "建立",
+      "submitOpen": "開啟群組",
+      "submitJoin": "加入",
+      "failed": "操作失敗，請檢查後重試。"
+    },
+    "invites": {
+      "type": "邀請類型",
+      "typeGeneric": "一般邀請",
+      "typeTargeted": "指定使用者",
+      "typeMembership": "指定群聊成員",
+      "change": "變更",
+      "requiredGroup": "僅限群成員",
+      "expiry": "過期時間",
+      "create": "建立邀請",
+      "groupSearch": "搜尋要分享或限定的群組",
+      "shareTo": "分享至群聊",
+      "moreGroups": "更多群組",
+      "targetedUid": "指定使用者：{{ uid }}",
+      "membershipGroup": "限定 {{ group }} 的成員",
+      "generic": "一般邀請",
+      "copy": "複製",
+      "share": "分享",
+      "revoke": "撤銷",
+      "copied": "邀請連結已複製",
+      "failed": "操作失敗，請重試。",
+      "refresh": "重新整理",
+      "revokeTitle": "撤銷邀請",
+      "groupFallback": "群聊",
+      "invalidExpiry": "請選擇未來的有效時間。",
+      "groupsFailed": "群組載入失敗",
+      "shared": "邀請已傳送",
+      "listTitle": "邀請碼"
+    },
+    "details": {
+      "topic": "話題",
+      "topicIn": "{{ name }} 中的話題",
+      "addDescription": "新增群組簡介",
+      "space": "個人空間",
+      "message": "傳送訊息",
+      "addFriend": "加入好友",
+      "subscribe": "訂閱",
+      "archived": "已封存",
+      "archive": "封存",
+      "invite": "邀請",
+      "unfriend": "移除好友",
+      "leaveGroup": "退出群組",
+      "unblock": "解除封鎖",
+      "block": "封鎖",
+      "loadFailed": "載入失敗，請重試。",
+      "tabs": {
+        "threads": "話題",
+        "members": "成員",
+        "images": "圖片",
+        "videos": "影片",
+        "files": "檔案"
+      },
+      "saveFailed": "儲存失敗，請重試",
+      "leaveDmTitle": "移除好友",
+      "leaveGroupTitle": "退出群聊",
+      "leaveDmAction": "刪除",
+      "leaveGroupAction": "退出",
+      "blockedFirst": "請先解除封鎖",
+      "notAccepting": "對方暫不接受好友請求",
+      "verificationMessage": "傳送驗證訊息",
+      "verificationPlaceholder": "驗證訊息",
+      "blockTitle": "封鎖使用者",
+      "unblockTitle": "解除封鎖",
+      "membershipMessages": "成員變動訊息",
+      "membershipMembers": "全體成員可見",
+      "membershipAdmins": "僅管理員可見",
+      "membershipNobody": "所有人不可見",
+      "membershipNote": "適用於歷史和新的進退群訊息。有查看權限時，仍遵循個人的顯示偏好。",
+      "privacySettings": "隱私設定",
+      "manageGroup": "群組管理"
+    },
+    "directory": {
+      "groups": "群聊",
+      "users": "使用者",
+      "moreGroups": "載入更多群組",
+      "failed": "搜尋失敗，請重試。",
+      "noResults": "找不到結果",
+      "prompt": "搜尋群組和使用者"
+    },
+    "search": {
+      "title": "搜尋",
+      "placeholder": "搜尋聊天訊息",
+      "relevance": "相關度",
+      "newest": "最新",
+      "failed": "搜尋失敗，請重試。",
+      "noResults": "找不到訊息"
+    },
+    "threads": {
+      "empty": "尚無話題",
+      "title": "話題",
+      "replies": "{{ count }} 則回覆",
+      "openFailed": "無法開啟話題，請重試。",
+      "noParticipants": "尚無參與者資訊"
+    },
+    "link": {
+      "failed": "無法開啟此連結",
+      "backToMessages": "返回訊息",
+      "messageUnavailable": "訊息已撤回或不存在"
+    },
+    "attachments": {
+      "locate": "定位",
+      "empty": "尚無內容",
+      "locateFailed": "無法定位原訊息，請重試。",
+      "openFailed": "無法開啟媒體，請重試。"
+    },
+    "members": {
+      "admin": "管理員",
+      "promote": "設為管理員",
+      "demote": "解除管理員",
+      "remove": "移出群組",
+      "removeTitle": "將 {{name}} 移出群組？",
+      "actionFailed": "操作失敗，請重試",
+      "search": "搜尋群組成員",
+      "noResults": "找不到符合的群組成員"
+    },
+    "listItem": {
+      "actionFailed": "操作失敗，請重試"
+    }
+  },
+  "conversation": {
+    "actions": {
+      "search": "搜尋",
+      "mute": "靜音",
+      "unmute": "取消靜音",
+      "info": "聊天資訊",
+      "subscribeThread": "訂閱話題",
+      "archiveThread": "封存話題",
+      "unarchiveThread": "取消封存話題"
+    },
+    "thread": "話題",
+    "chat": "會話",
+    "pinned": "置頂訊息",
+    "pinnedLoadFailed": "置頂訊息載入失敗，請重試",
+    "unreadBelow": "未讀訊息",
+    "threadLoadFailed": "話題狀態載入失敗，請重試。",
+    "threadUpdateFailed": "話題更新失敗，請重試。",
+    "empty": "尚無訊息",
+    "emptyVisible": "尚無可顯示的訊息",
+    "missing": "這則訊息已刪除或無法查看。",
+    "loadFailed": "訊息載入失敗，請重試。",
+    "editing": "編輯訊息",
+    "replyingTo": "正在回覆 {{ name }}",
+    "reply": "回覆訊息",
+    "muteFailed": "靜音設定失敗，請重試",
+    "savedTitle": "收藏",
+    "emptyPinned": "尚無置頂訊息",
+    "emptySaved": "尚無收藏訊息",
+    "viewOriginal": "查看原訊息",
+    "unsave": "取消收藏",
+    "loadMoreFailed": "載入訊息失敗，請重試。"
+  },
+  "messages": {
+    "date": {
+      "today": "今天",
+      "yesterday": "昨天"
+    },
+    "preview": {
+      "forwarded": "[聊天記錄]",
+      "deleted": "訊息已刪除",
+      "someone": "有人",
+      "system": {
+        "joined": "加入了群聊",
+        "left": "退出了群聊",
+        "added": "邀請 {{ target }} 加入了群聊",
+        "removed": "將 {{ target }} 移出了群聊",
+        "pinned": "置頂了{{ message }}",
+        "unpinned": "取消置頂了{{ message }}",
+        "threadPinned": "在本話題中置頂了{{ message }}",
+        "threadUnpinned": "在話題中取消置頂了{{ message }}",
+        "accepted": "接受了 {{ target }} 的好友申請",
+        "message": "訊息"
+      },
+      "invite": "[邀請]",
+      "image": "[圖片]",
+      "video": "[影片]",
+      "audio": "[語音]",
+      "file": "[檔案]",
+      "sticker": "[表情]",
+      "other": "[非文字訊息]"
+    },
+    "menu": {
+      "addReaction": "新增表態",
+      "actions": {
+        "reply": "回覆",
+        "thread": "話題",
+        "pin": "置頂",
+        "unpin": "取消置頂",
+        "copy": "複製",
+        "edit": "編輯",
+        "save": "收藏",
+        "unsave": "取消收藏",
+        "favoriteSticker": "收藏表情",
+        "unfavoriteSticker": "取消收藏表情",
+        "link": "連結",
+        "recall": "收回",
+        "reactions": "查看表態"
+      },
+      "confirm": {
+        "recallTitle": "收回訊息",
+        "unpinTitle": "取消置頂",
+        "pinTitle": "置頂訊息",
+        "recallAuthor": "確定要收回 {{ name }} 的這則訊息嗎？",
+        "recall": "收回後，其他成員將無法查看這則訊息。",
+        "recallDm": "收回後，對方將無法查看這則訊息。",
+        "unpin": "確定取消這則訊息的置頂？",
+        "pinDm": "置頂後，你和對方都能看到這則置頂訊息。",
+        "pin": "置頂後，此會話的成員都能看到這則置頂訊息。"
+      },
+      "notice": {
+        "copied": "已複製",
+        "saved": "已收藏",
+        "unsaved": "已取消收藏",
+        "pinned": "已置頂",
+        "unpinned": "已取消置頂",
+        "recalled": "已收回",
+        "reactionLimit": "每個人最多新增 5 種表態，每則訊息最多 50 種",
+        "metadataFailed": "操作權限或置頂狀態載入失敗，請重新開啟選單後重試",
+        "failed": "操作失敗，請重試"
+      }
+    },
+    "message": {
+      "edited": "已編輯",
+      "recalled": "已撤回"
+    },
+    "composer": {
+      "tooManyAttachments": "每則訊息最多新增 20 個附件。",
+      "editMediaOnly": "編輯訊息時只能新增圖片或影片。",
+      "placeholder": "輸入訊息",
+      "media": "媒體",
+      "files": "檔案",
+      "blockedTitle": "無法傳送訊息",
+      "blockedSelf": "你已將對方封鎖，解除封鎖後可以繼續聊天。",
+      "blockedBy": "對方暫時無法接收你的訊息。",
+      "notFriends": "你們已不是好友，重新加入好友後可以繼續聊天。"
+    },
+    "invite": {
+      "groupInvite": "群聊邀請",
+      "failed": "邀請失效或無法載入，點擊重試",
+      "joined": "已加入，開啟群組",
+      "view": "查看群組資訊並加入"
+    },
+    "voice": {
+      "holdToSave": "放開儲存",
+      "tooShort": "錄音太短",
+      "errorTitle": "無法錄音",
+      "unsupported": "目前瀏覽器不支援錄音，請使用其他瀏覽器。",
+      "permission": "無法錄音，請檢查麥克風權限。",
+      "original": "原始檔案"
+    },
+    "media": {
+      "openOriginal": "載入失敗，開啟原始檔案"
+    },
+    "thread": {
+      "replies": "{{ count }} 則回覆"
+    },
+    "selection": {
+      "recallConfirm": "確定撤回選取的 {{count}} 則訊息？撤回後，其他成員將無法查看這些訊息。",
+      "recallConfirmDm": "確定撤回選取的 {{count}} 則訊息？撤回後，對方將無法查看這些訊息。",
+      "recalled": "已撤回 {{count}} 則訊息",
+      "recallFailed": "已撤回 {{succeeded}} 則，{{failed}} 則未能撤回，請重試。"
+    },
+    "forward": {
+      "changeTarget": "更換轉發目標",
+      "pendingCount": "轉發 {{count}} 則訊息",
+      "twoParticipants": "{{first}}和{{second}}",
+      "otherParticipants": "{{first}}和其他{{count}}人",
+      "navigationFailed": "無法開啟目標會話，請重試。",
+      "loadMore": "繼續載入",
+      "chatsFailed": "聊天載入失敗，請重試。",
+      "threadsFailed": "話題載入失敗，請重試。",
+      "recordsUnavailable": "聊天記錄已無法存取。",
+      "unavailable": "所選訊息中包含無法轉發的訊息，請調整選取範圍。",
+      "action": "轉發",
+      "select": "多選",
+      "from": "轉發自 {{name}}",
+      "unknown": "未知使用者",
+      "records": "聊天記錄",
+      "count": "{{count}} 則訊息",
+      "to": "轉發到",
+      "search": "搜尋已載入的聊天和話題",
+      "partialEmpty": "已載入的聊天和話題中沒有符合項目",
+      "noTargets": "暫無可轉發到的聊天或話題",
+      "empty": "沒有符合的聊天或話題",
+      "invalid": "所選訊息已無法轉發，請關閉視窗後重新選擇。",
+      "topicUnavailable": "話題中包含無法轉發的訊息。",
+      "topicTooMany": "話題訊息超過 {{max}} 則，無法合併轉發。",
+      "topicLoadFailed": "話題訊息載入失敗，請重試。",
+      "selected": "已選 {{count}} / {{max}} 則",
+      "redacted": "[引用內容已隱藏]",
+      "close": "關閉",
+      "confirmTitle": "確認轉發",
+      "continue": "繼續轉發",
+      "confirmPendingAudio": "尚未完成轉碼的語音將替換為[待轉碼語音]，無法播放，之後也不會自動恢復。是否繼續轉發？",
+      "confirmNested": "巢狀層級過深的聊天記錄將替換為[聊天記錄]，無法展開。是否繼續轉發？",
+      "confirmBoth": "尚未完成轉碼的語音和巢狀層級過深的聊天記錄將分別替換為[待轉碼語音]和[聊天記錄]，無法播放或展開，之後也不會自動恢復。是否繼續轉發？"
+    },
+    "placeholder": {
+      "pendingAudio": "[待轉碼語音]",
+      "unavailable": "[無法顯示的訊息]"
+    },
+    "upload": {
+      "offline": "上傳因網路中斷而停止。",
+      "tooLarge": "檔案超過 {{limit}} MiB 上限，請壓縮檔案或移除後重新選擇。",
+      "tooLargeUnknown": "檔案超過伺服器大小上限，請壓縮檔案或移除後重新選擇。",
+      "empty": "檔案為空，請移除後重新選擇。",
+      "filename": "檔案名稱不能為空或超過 255 個字元，請縮短名稱後重新選擇。",
+      "unsupportedMedia": "無法辨識為圖片或影片，請移除後透過「檔案」入口傳送。",
+      "invalidType": "檔案類型不符合上傳要求，請移除後重新選擇。",
+      "authentication": "登入狀態已失效，請重新登入後重試。",
+      "forbidden": "伺服器不允許此次上傳，請確認帳號是否有上傳權限。",
+      "storageRejected": "檔案儲存服務拒絕了此次上傳，請重試。",
+      "rateLimited": "上傳請求過於頻繁。",
+      "server": "上傳服務暫時無法使用。",
+      "timeout": "上傳請求逾時。",
+      "network": "無法連線至上傳服務，請檢查網路連線。",
+      "processingTimeout": "媒體處理長時間沒有進展，請重試，或移除後透過「檔案」入口傳送原始檔案。",
+      "processingFailed": "無法處理此媒體，請重試，或移除後透過「檔案」入口傳送原始檔案。",
+      "rejected": "伺服器未接受此檔案，請重試或重新選擇檔案。",
+      "unknown": "上傳未完成，請重試。",
+      "autoRetry": "將自動重試。",
+      "retrying": "正在重試上傳…",
+      "unreadable": "無法讀取本機檔案，請移除後重新選擇。",
+      "reconnect": "連線後將自動重試。",
+      "failedTitle": "上傳失敗",
+      "attachmentsTitle": "附件"
+    }
+  },
+  "stickers": {
+    "favorites": "收藏",
+    "title": "貼紙",
+    "count": "{{ count }} 張貼紙",
+    "invalidUploadTitle": "無法新增貼紙",
+    "invalidUploadMessage": "請選擇 10 MB 以內的圖片或 WebM 影片。",
+    "addTitle": "新增貼紙",
+    "emojiPlaceholder": "對應表情，例如 🙂",
+    "emojiExample": "例如 🙂",
+    "optionalName": "名稱（選填）",
+    "loadFailed": "載入失敗。",
+    "empty": "尚無貼紙",
+    "add": "新增貼紙",
+    "added": "貼紙已新增",
+    "addFailed": "新增表情失敗",
+    "favorite": "收藏表情",
+    "unfavorite": "取消收藏",
+    "favoriteFailed": "收藏狀態更新失敗，請重試。",
+    "favoriteOne": "收藏單個",
+    "unsubscribe": "取消訂閱",
+    "subscribeAll": "訂閱整組",
+    "removePack": "移除貼紙包",
+    "addPack": "新增貼紙包",
+    "emojiLoadFailed": "表情載入失敗，請關閉後重試。",
+    "createPack": "建立貼紙包",
+    "createFailed": "建立貼紙包失敗",
+    "emojiLabel": "對應表情",
+    "fromMessage": {
+      "action": "存為貼紙",
+      "title": "加入貼紙包",
+      "pack": "目標貼紙包",
+      "invalid": "圖片或表情不符合要求：僅支援 10 MiB 以內的單張純圖片訊息和 1–4 個表情。",
+      "forbidden": "你已無法存取此聊天，或無權修改所選貼紙包。",
+      "missing": "來源訊息或貼紙包已不存在。",
+      "changed": "來源圖片已變更，請關閉後重新選擇圖片。",
+      "uncertain": "無法確認儲存結果，請先查看貼紙包，避免重複加入。",
+      "noOwnedPacks": "暫無自有貼紙包，請先建立一個。"
+    },
+    "discovery": {
+      "search": "搜尋貼紙包",
+      "trending": "近期熱門",
+      "popular": "最多訂閱",
+      "subscribers": "{{count}} 人訂閱",
+      "recentSubscribers": "近 {{days}} 天 {{count}} 人訂閱",
+      "empty": "找不到貼紙包",
+      "viewPack": "查看全部",
+      "noPacks": "暫無可訂閱的公開貼紙包",
+      "clearSearch": "清除搜尋",
+      "title": "新增貼紙包",
+      "subscribe": "訂閱",
+      "subscribed": "已訂閱",
+      "subscribeFailed": "訂閱貼紙包失敗，請重試"
+    },
+    "description": "簡介："
+  },
+  "emojiPicker": {
+    "loadFailed": "表情載入失敗，請重新整理頁面後重試。"
+  },
+  "pwa": {
+    "notificationPrompt": {
+      "title": "允許「茶話」傳送通知嗎",
+      "message": "之後可以在設定內修改",
+      "decline": "不允許",
+      "allow": "允許",
+      "failed": "授權失敗，請再試一次"
+    },
+    "notification": {
+      "invite": "[邀請]",
+      "sticker": "[表情]",
+      "audio": "[語音]",
+      "file": "[檔案]",
+      "image": "[圖片]",
+      "video": "[影片]",
+      "message": "[訊息]"
+    },
+    "landing": {
+      "title": "安裝 茶話",
+      "hero": {
+        "title": "將茶話加入主畫面",
+        "install": "安裝後可以像原生應用程式一樣從桌面直接啟動。",
+        "share": "如果你要向朋友推薦，請傳送論壇貼文的網址，不要直接傳送目前頁面的網址。目前頁面的網址包含你的帳號登入資訊。"
+      },
+      "browsers": {},
+      "android": {
+        "step3": "選擇「安裝並建立捷徑」，然後點「安裝」",
+        "step4": "確認安裝，之後即可從桌面直接開啟",
+        "note": "如果瀏覽器主動顯示安裝畫面，直接點安裝即可。",
+        "step1Before": "使用",
+        "step1After": "開啟本頁",
+        "step2Before": "點擊",
+        "step2After": "",
+        "note2Before": "如果無法使用 Chrome，也可以使用",
+        "note2Mid": "點擊",
+        "note2After": "，選擇「加到手機」（可能會在第二頁）。"
+      },
+      "ios": {
+        "step3": "選擇「加入主畫面」（可能會在「查看更多」內）",
+        "step4": "確認加入，之後即可從主畫面直接開啟",
+        "step1Before": "使用",
+        "step1After": "開啟本頁",
+        "step2Before": "點擊",
+        "step2Between": "，選擇",
+        "step2After": ""
+      },
+      "windows": {
+        "step3": "選擇「更多工具」>「應用程式」>「將此網站安裝為應用程式」。",
+        "step4": "自行選擇將圖示建立在工作列、開始功能表或桌面。",
+        "note": "如果瀏覽器在網址列顯示安裝應用程式按鈕，直接點安裝即可",
+        "step1Before": "使用",
+        "step1After": "開啟本頁。",
+        "step2Before": "點擊",
+        "step2After": ""
+      },
+      "macos": {
+        "step3": "選擇「加入 Dock」",
+        "step4": "確認加入，之後即可從 Dock 或「App」中開啟",
+        "step1Before": "使用",
+        "step1After": "開啟本頁",
+        "step2Before": "點擊"
+      },
+      "linux": {
+        "note": "這點小問題想必難不倒你 :)"
+      },
+      "browserChrome": "Chrome 瀏覽器",
+      "browserSafari": "Safari 瀏覽器",
+      "browserEdge": "Edge 瀏覽器",
+      "menu": "選單",
+      "share": "分享"
+    }
+  },
+  "reactions": {
+    "title": "表態",
+    "all": "全部 {{ count }}"
+  },
+  "notificationPreferences": {
+    "chatSettings": "通知設定",
+    "thisDevice": "本機通知",
+    "groupChats": "群組",
+    "directChats": "私聊",
+    "inherit": "恢復預設",
+    "alwaysMuted": "一律靜音",
+    "alwaysUnmuted": "一律通知",
+    "archived": "已封存",
+    "noExceptions": "尚無例外",
+    "loadFailed": "載入失敗，請重試",
+    "saveFailed": "儲存失敗，請重試",
+    "loadMore": "載入更多",
+    "chatNotifications": "聊天通知",
+    "directTitle": "私聊通知",
+    "groupTitle": "群組通知",
+    "enableDirect": "啟用私聊通知",
+    "enableGroups": "啟用群組通知",
+    "enabled": "已開啟",
+    "disabled": "已關閉",
+    "exceptionCount": "{{count}} 個例外",
+    "addException": "新增例外",
+    "remove": "移除",
+    "clearAll": "刪除所有例外",
+    "clearConfirm": "將此分類的所有例外恢復為預設通知設定，同時清除這些聊天的暫時靜音。封存狀態不會改變。",
+    "muted": "已靜音",
+    "unmuted": "未靜音",
+    "searchChats": "搜尋已載入的聊天",
+    "addHint": "選擇聊天，設為與目前預設相反的通知狀態。新增後可點擊例外修改。",
+    "alreadyAdded": "已新增",
+    "noChats": "沒有符合的聊天"
+  },
+  "speaking": {
+    "groupTitle": "全群發言權限",
+    "memberTitle": "個人發言限制",
+    "adminNote": "管理員不受發言限制。群組權限與個人限制取較嚴格的一項。",
+    "memberNote": "不限制個人發言時仍遵循群組權限。設為管理員會清除個人限制。",
+    "destinationRestricted": "你目前不能向此對話傳送訊息，請選擇其他群組或話題。",
+    "modes": {
+      "unrestricted": "不限制發言",
+      "threadsOnly": "僅限話題內發言",
+      "repliesOnly": "僅回覆已有話題",
+      "readOnly": "禁止發言"
+    },
+    "blocked": {
+      "threadsOnly": "僅能在話題內發言，不能傳送或編輯群組主聊天訊息。",
+      "repliesOnly": "僅能回覆已有話題，不能在群組主聊天發言或建立話題。",
+      "readOnly": "目前禁止發言，無法傳送或編輯訊息。"
+    }
+  }
+}

@@ -1,0 +1,24 @@
+<div #track class="track">
+  <div class="wave-row">
+    <button class="play" type="button" (click)="toggle()">
+      @if (loading()) {
+        <ion-spinner />
+      } @else {
+        <ion-icon [icon]="failed() ? icons.refreshOutline : playing() ? icons.pause : icons.play" />
+      }
+    </button>
+    <div #wave class="wave">
+      @if (!waveform()) {
+        <div class="placeholder"></div>
+      }
+    </div>
+  </div>
+  <div class="time-row">
+    <span class="time">{{ time(elapsed()) }}/{{ time(duration()) }}</span>
+  </div>
+</div>
+@if (failed()) {
+  <a class="trailing" [href]="src()" target="_blank">{{ 'messages.voice.original' | transloco }}</a>
+} @else if (!dock()) {
+  <button type="button" class="trailing" (click)="speed()">{{ playback.rate() }}×</button>
+}

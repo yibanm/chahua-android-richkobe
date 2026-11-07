@@ -1,0 +1,72 @@
+<ion-header>
+  <ion-toolbar>
+    <ion-buttons slot="start">
+      <app-page-back [fallback]="backHref()" />
+    </ion-buttons>
+    <ion-title>{{ 'conversation.pinned' | transloco }}</ion-title>
+  </ion-toolbar>
+</ion-header>
+<ion-content
+  appScrollbars
+  [scrollEvents]="true"
+  (ionScroll)="onScroll()"
+  (ionScrollStart)="scrolling.scrollStart()"
+  (ionScrollEnd)="scrolling.scrollEnd()"
+  (touchstart)="scrolling.touchStart()"
+  (touchend)="scrolling.touchEnd()"
+  (touchcancel)="scrolling.touchEnd()">
+  <span
+    slot="fixed"
+    #floatingDate
+    class="floating-date"
+    [class.scrolling]="scrolling.moving() && visibleDate()"
+    [class.colliding]="dateColliding() || !visibleDate()">
+    {{ visibleDate() | messageDate }}
+  </span>
+  <div class="message-list">
+    @for (row of rows(); track row.message.id; let index = $index) {
+      @if (row.dateBreak) {
+        <p
+          #dateSeparator
+          class="message-date"
+          [style.visibility]="
+            scrolling.moving() && !dateColliding() && hiddenDateKey() === index ? 'hidden' : 'visible'
+          ">
+          <span>{{ row.message.createdAt | messageDate }}</span>
+        </p>
+      }
+      <app-message
+        [showAllAvatars]="preferences.showAllAvatars()"
+        [message]="row.message"
+        [own]="row.message.sender.uid === session.user()?.uid"
+        [first]="row.first"
+        [last]="row.last"
+        [busy]="row.message.id != null && menu()?.busyMessageId() === row.message.id"
+        [canReply]="!menu()?.busy()"
+        [canOpenThread]="!threadId()"
+        (reply)="replyTo($event)"
+        (menu)="menu()?.open($event)"
+        (react)="menu()?.reactTo(row.message, $event)"
+        (jump)="locateMessage(row.message, $event)"
+        (openThread)="openThread(row.message.chatId, $event)"></app-message>
+    } @empty {
+      @if (!loading() && !failed()) {
+        <p class="ion-text-center">{{ 'conversation.emptyPinned' | transloco }}</p>
+      }
+    }
+  </div>
+  @if (loading()) {
+    <div class="page-loading">
+      <ion-spinner></ion-spinner>
+    </div>
+  }
+  @if (failed()) {
+    <app-load-error [message]="'conversation.loadFailed' | transloco" (retry)="load()" />
+  }
+</ion-content>
+<app-message-menu
+  [messages]="messages()"
+  [chatId]="id()"
+  [threadId]="threadId()"
+  (reply)="replyTo($event)"
+  (openThread)="openThread(id(), $event)"></app-message-menu>

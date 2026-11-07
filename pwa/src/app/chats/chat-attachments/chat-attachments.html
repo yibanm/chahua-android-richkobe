@@ -1,0 +1,55 @@
+@if (kind() === Kind.image) {
+  <div class="media">
+    @for (item of items(); track item.id) {
+      <button type="button" [disabled]="!!opening()" (click)="view(item)">
+        <img [src]="item.url" loading="lazy" />
+        @if (opening() === item.id) {
+          <div class="opening"><ion-spinner /></div>
+        }
+      </button>
+    }
+  </div>
+} @else {
+  <ion-list>
+    @for (item of items(); track item.id) {
+      <ion-item>
+        <ion-label>
+          <a [href]="item.url" target="_blank" rel="noopener" (click)="kind() === Kind.video && view(item, $event)">
+            {{ item.fileName }}
+          </a>
+          @if (opening() === item.id) {
+            <ion-spinner />
+          }
+          <p>{{ item.sender.name }}</p>
+        </ion-label>
+        <ion-button slot="end" fill="clear" [disabled]="!!locating()" (click)="locate(item)">
+          @if (locating() === item.id) {
+            <ion-spinner />
+          } @else {
+            {{ 'chats.attachments.locate' | transloco }}
+          }
+        </ion-button>
+      </ion-item>
+    }
+  </ion-list>
+}
+@if (cursor() != null && !error()) {
+  <ion-infinite-scroll threshold="100px" (ionInfinite)="more($event)">
+    <ion-infinite-scroll-content />
+  </ion-infinite-scroll>
+}
+@if (loading() && cursor() == null) {
+  <div class="page-loading"><ion-spinner /></div>
+} @else if (error()) {
+  <app-load-error compact [message]="'common.loadFailed' | transloco" (retry)="load()" />
+} @else if (!items().length) {
+  <p class="ion-padding ion-text-center">{{ 'chats.attachments.empty' | transloco }}</p>
+}
+
+@if (locateFailed()) {
+  <p class="ion-padding">{{ 'chats.attachments.locateFailed' | transloco }}</p>
+}
+
+@if (openFailed()) {
+  <p class="ion-padding">{{ 'chats.attachments.openFailed' | transloco }}</p>
+}

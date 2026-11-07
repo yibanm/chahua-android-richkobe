@@ -1,0 +1,6 @@
+<nicematic-picker
+  [locale]="pickerLocale()"
+  [pickerWidth]="350"
+  [pickerHeight]="height()"
+  [cellSize]="36"
+  (emojiSelect)="chosen.emit($event.char)" />

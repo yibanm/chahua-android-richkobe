@@ -1,0 +1,560 @@
+<ion-header appConversationViewportHeader>
+  <ion-toolbar #toolbar>
+    <ion-buttons slot="start" class="ion-hide-md-up">
+      <ion-button (click)="back()">
+        <ion-icon slot="icon-only" [icon]="toolbarIcons.chevronBack" />
+      </ion-button>
+    </ion-buttons>
+    @if (showBackToChat()) {
+      <ion-buttons slot="start" class="ion-hide-md-down">
+        <ion-button (click)="backToChat()">
+          <ion-icon slot="icon-only" [icon]="toolbarIcons.chevronBack" />
+        </ion-button>
+      </ion-buttons>
+    }
+    <ion-title (click)="details()">
+      <div class="conversation-title">
+        <app-chat-avatar [entry]="chatTitle().avatar" [size]="32" />
+        <div class="conversation-heading" #titleText>
+          <div class="conversation-name">
+            @if (threadId()) {
+              @if (threadRoot(); as root) {
+                <app-message-preview [message]="root" />
+              } @else {
+                {{ 'conversation.thread' | transloco }}
+              }
+            } @else {
+              {{ chatTitle().name ?? ((chatTitle().isDm ? 'chats.content.dm' : 'conversation.chat') | transloco) }}
+            }
+          </div>
+          @if (!threadId()) {
+            @if (chatTitle().isDm) {
+              <app-user-presence [uid]="peerUid()" [active]="active()" />
+            } @else {
+              <app-group-presence [chatId]="id()" [active]="active()" />
+            }
+          }
+        </div>
+      </div>
+    </ion-title>
+    <ion-buttons #toolbarActions slot="end" class="ion-hide-md-up">
+      @if (compactToolbar()) {
+        <ion-button (click)="actionsMenu.present($event)">
+          <ion-icon slot="icon-only" [icon]="toolbarIcons.ellipsisVertical" />
+        </ion-button>
+      } @else {
+        <ng-container [ngTemplateOutlet]="actions" />
+      }
+    </ion-buttons>
+    <ion-buttons slot="end" class="ion-hide-md-down">
+      <ng-container [ngTemplateOutlet]="actions" />
+    </ion-buttons>
+  </ion-toolbar>
+  @if (selectedPin(); as pin) {
+    <ion-toolbar class="pinned-bar">
+      <button type="button" class="pinned-preview" [disabled]="!!pendingNavigation()" (click)="locatePin()">
+        @if (jumpingTo() === pin.message.id) {
+          <ion-spinner class="pin-loading"></ion-spinner>
+        }
+        <span class="pinned-title">
+          {{ 'conversation.pinned' | transloco }}
+          @if (visiblePins().length > 1) {
+            · {{ selectedPinIndex() + 1 }}/{{ visiblePins().length }}
+          }
+        </span>
+        <app-message-preview [message]="pin.message"></app-message-preview>
+      </button>
+      <ion-buttons slot="end">
+        <ion-button [routerLink]="pinsHref()">
+          <ion-icon slot="icon-only" [icon]="listIcon"></ion-icon>
+        </ion-button>
+      </ion-buttons>
+    </ion-toolbar>
+  } @else if (accessible() && pinsFailed()) {
+    <ion-toolbar>
+      @if (pins().loading()) {
+        <ion-spinner></ion-spinner>
+      } @else {
+        <ion-button fill="clear" (click)="loadPins()">{{ 'conversation.pinnedLoadFailed' | transloco }}</ion-button>
+      }
+    </ion-toolbar>
+  }
+  <app-voice-bar />
+</ion-header>
+<ion-content
+  appScrollbars
+  [scrollEvents]="true"
+  (ionScroll)="onScroll()"
+  (ionScrollStart)="scrolling.scrollStart()"
+  (ionScrollEnd)="scrolling.scrollEnd()"
+  (touchstart)="scrolling.touchStart()"
+  (touchend)="scrolling.touchEnd()"
+  (touchcancel)="scrolling.touchEnd()">
+  <div slot="fixed" class="sticky-avatar-container" [class.sent]="stickySender()?.uid === session.user()?.uid">
+    @if (stickyAvatarsEnabled() && stickySender(); as sender) {
+      <button
+        class="sticky-avatar"
+        [avatarColor]="sender.avatarUrl ? null : (sender.name ?? sender.uid.toString())"
+        [style.transform]="'translateY(' + stickyOffset() + 'px)'"
+        [routerLink]="['/profile', sender.uid]">
+        @if (sender.avatarUrl; as src) {
+          <img [src]="src" width="34" height="34" decoding="async" />
+        } @else {
+          {{ (sender.name ?? sender.uid.toString() | avatarText: 2).toUpperCase() }}
+        }
+      </button>
+    }
+  </div>
+  <span
+    slot="fixed"
+    #floatingDate
+    class="floating-date"
+    [class.scrolling]="scrolling.moving() && visibleDate()"
+    [class.colliding]="dateColliding() || !visibleDate()">
+    {{ visibleDate() | messageDate }}
+  </span>
+  <!-- Keep the default slot stable when pagination adds loading indicators or changes paging controls. -->
+  <div #messageContent>
+    @if (threadError()) {
+      <app-load-error
+        compact
+        [message]="
+          (threadError() === ThreadError.Load ? 'conversation.threadLoadFailed' : 'conversation.threadUpdateFailed')
+            | transloco
+        "
+        (retry)="loadSubscription()" />
+    }
+    @if (conversation.page()?.olderCursor) {
+      <div class="ion-text-center">
+        <button
+          type="button"
+          class="pagination-control"
+          [disabled]="!conversation.canLoad(PageDirection.Older)"
+          (click)="loadPage(PageDirection.Older)">
+          @if (conversation.pagingDirection() === PageDirection.Older) {
+            <ion-spinner></ion-spinner>
+          } @else {
+            <ion-icon class="pagination-icon" [icon]="upIcon" />
+          }
+        </button>
+      </div>
+    }
+    @if (!conversation.page() && conversation.loading()) {
+      <div class="message-skeleton">
+        @for (row of [0, 1, 2, 3, 4, 5]; track row) {
+          <div
+            class="message-skeleton-row"
+            [class.sent]="row % 3 === 2"
+            [class.short]="row % 2 === 0"
+            [class.tall]="row % 3 === 0">
+            @if (row % 3 !== 2 && showMessageDetails()) {
+              <span class="skeleton-block message-skeleton-avatar"></span>
+            }
+            <span class="skeleton-block message-skeleton-bubble"></span>
+          </div>
+        }
+      </div>
+    }
+    <div class="message-list">
+      @for (row of rows(); track row.key; let index = $index) {
+        @if (row.dateBreak) {
+          <p
+            #dateSeparator
+            class="message-date"
+            [style.visibility]="
+              scrolling.moving() && !dateColliding() && hiddenDateKey() === row.key ? 'hidden' : 'visible'
+            ">
+            <span>{{ row.message.createdAt | messageDate }}</span>
+          </p>
+        }
+        @if (firstUnreadId() && row.message.id === firstUnreadId()) {
+          <p #unreadSeparator class="unread-separator">{{ 'conversation.unreadBelow' | transloco }}</p>
+        }
+        <app-message
+          [stickyAvatar]="stickyAvatarsEnabled() && stickyRow() === index"
+          [showAllAvatars]="preferences.showAllAvatars()"
+          [showDetails]="showMessageDetails()"
+          [message]="row.message"
+          [selecting]="selecting()"
+          [selected]="isSelected(row.message.id, row.key)"
+          [selectable]="
+            !recalling() &&
+            canSelect(row.outgoing ?? row.confirmed!) &&
+            (selectedMessages().size < selectionLimit || isSelected(row.message.id, row.key))
+          "
+          (toggleSelected)="toggleSelection(row.outgoing ?? row.confirmed!)"
+          [interactive]="!!row.confirmed && !row.outgoing"
+          [outgoingId]="row.outgoing?.clientGeneratedId"
+          [delivery]="row.outgoing?.delivery()"
+          [busy]="row.message.id != null && menu()?.busyMessageId() === row.message.id"
+          [uploads]="row.outgoing?.uploads ?? []"
+          (retry)="row.outgoing && outbox.retry(row.outgoing)"
+          (retryUpload)="row.outgoing && outbox.retryUpload(row.outgoing, $event)"
+          (removeUpload)="row.outgoing && outbox.removeUpload(row.outgoing, $event)"
+          [own]="row.message.sender.uid === session.user()?.uid"
+          [read]="row.message.sender.uid === session.user()?.uid && isReadByPeer(row.message)"
+          [first]="row.first"
+          [last]="row.last"
+          [canReply]="!editing() && canSendMessage()"
+          [jumpingTo]="jumpingTo()"
+          [jumpDisabled]="!!pendingNavigation()"
+          [canOpenThread]="!threadId()"
+          (reply)="row.confirmed && startReply(row.confirmed)"
+          (menu)="menu()?.open($event)"
+          (react)="row.confirmed && menu()?.reactTo(row.confirmed, $event)"
+          (jump)="goTo({ type: ConversationTargetKind.Message, messageId: $event }, false, row.message.id)"
+          (openThread)="openThread($event)"></app-message>
+        @if (row.outgoing?.speakingRestriction?.(); as mode) {
+          <p class="speaking-error ion-padding-horizontal ion-text-right">
+            {{ 'speaking.blocked.' + mode | transloco }}
+          </p>
+        }
+      } @empty {
+        @if (
+          conversation.page() &&
+          !conversation.loading() &&
+          !conversation.error() &&
+          !conversation.page()?.olderCursor &&
+          !conversation.page()?.newerCursor
+        ) {
+          <p class="ion-text-center">
+            {{ (hideMembershipMessages() ? 'conversation.emptyVisible' : 'conversation.empty') | transloco }}
+          </p>
+        }
+      }
+    </div>
+    @if (conversation.page()?.newerCursor) {
+      <div class="ion-text-center">
+        <button
+          type="button"
+          class="pagination-control"
+          [disabled]="!conversation.canLoad(PageDirection.Newer)"
+          (click)="loadPage(PageDirection.Newer)">
+          @if (conversation.pagingDirection() === PageDirection.Newer) {
+            <ion-spinner></ion-spinner>
+          } @else {
+            <ion-icon class="pagination-icon" [icon]="downIcon" />
+          }
+        </button>
+      </div>
+    }
+    @if (conversation.error()) {
+      <app-load-error
+        [compact]="!!conversation.page()"
+        [message]="
+          (conversation.error() === ConversationError.Missing
+            ? 'conversation.missing'
+            : conversation.error() === ConversationError.Open
+              ? 'conversation.loadFailed'
+              : 'conversation.loadMoreFailed'
+          ) | transloco
+        "
+        [retryable]="conversation.error() !== ConversationError.Missing"
+        (retry)="retry()" />
+    }
+  </div>
+  @if (conversation.page(); as page) {
+    <!-- Keep the fixed slot mounted: changing its nodes interrupts Safari's momentum scrolling. -->
+    <ion-fab class="history-navigation" slot="fixed" vertical="bottom" horizontal="end">
+      <div class="reaction-navigation" [hidden]="!canJumpReaction()">
+        <ion-fab-button size="small" [disabled]="!!pendingNavigation()" (click)="jumpToNextReaction()">
+          <ion-icon class="action-icon" [icon]="reactionIcon"></ion-icon>
+        </ion-fab-button>
+        <ion-badge>{{ reactionRemaining() >= 1000 ? '999+' : reactionRemaining() }}</ion-badge>
+      </div>
+      <div class="mention-navigation" [hidden]="!canJumpMention()">
+        <ion-fab-button size="small" [disabled]="!!pendingNavigation()" (click)="jumpToNextMention()">
+          <ion-icon class="action-icon" [icon]="mentionIcon"></ion-icon>
+        </ion-fab-button>
+        <ion-badge>{{ mentionRemaining() >= 1000 ? '999+' : mentionRemaining() }}</ion-badge>
+      </div>
+      <div class="down-navigation" [hidden]="!showDownButton()">
+        <ion-fab-button size="small" [disabled]="!!pendingNavigation()" (click)="navigateDown()">
+          @if (navigatingDown() || pendingNavigation()?.type === ConversationTargetKind.Latest) {
+            <ion-spinner class="action-icon"></ion-spinner>
+          } @else {
+            <ion-icon class="action-icon" [icon]="downIcon"></ion-icon>
+          }
+        </ion-fab-button>
+        <ion-badge [style.opacity]="unreadCount() ? 1 : 0">{{ unreadCount() }}</ion-badge>
+      </div>
+    </ion-fab>
+  }
+</ion-content>
+<ion-footer #composerFooter [class.ion-display-none]="!accessible()">
+  @if (selecting()) {
+    <ion-toolbar>
+      <div class="selection-actions">
+        <ion-buttons class="selection-start">
+          <ion-button
+            color="danger"
+            [title]="'messages.menu.actions.recall' | transloco"
+            [disabled]="recalling() || !canRecallSelection()"
+            (click)="recallSelection()">
+            @if (recalling()) {
+              <ion-spinner />
+            } @else {
+              <ion-icon slot="icon-only" [icon]="selectionIcons.recall" />
+            }
+          </ion-button>
+        </ion-buttons>
+        <span class="selection-count">
+          {{ 'messages.forward.count' | transloco: { count: selectedMessages().size } }}
+        </span>
+        <ion-buttons class="selection-end">
+          <ion-button [title]="'common.cancel' | transloco" [disabled]="recalling()" (click)="cancelSelection()">
+            <ion-icon slot="icon-only" [icon]="selectionIcons.cancel" />
+          </ion-button>
+          <ion-button
+            [title]="'messages.forward.action' | transloco"
+            [disabled]="recalling() || !selectedMessages().size"
+            (click)="forwardSelection()">
+            <ion-icon slot="icon-only" [icon]="selectionIcons.forward" />
+          </ion-button>
+        </ion-buttons>
+      </div>
+    </ion-toolbar>
+  }
+
+  <app-message-composer
+    [dockStickers]="largeScreen()"
+    (stickersOpened)="stickersOpened()"
+    [hidden]="selecting()"
+    [style.--context-light]="composerContextColors()?.light"
+    [style.--context-dark]="composerContextColors()?.dark"
+    [relationship]="relationship()"
+    [restriction]="speakingRestriction()"
+    [chatId]="id()"
+    [mentionsEnabled]="mentionsEnabled()"
+    [text]="!pendingForward() && editing() ? editText() : draft()"
+    (textChange)="updateDraft($event)"
+    [editing]="editing()"
+    [editingUploads]="editingUploads()"
+    [forwarding]="!!pendingForward()"
+    (forwardSubmitted)="sendForward($event)"
+    (submitted)="sendMessage($event)"
+    (editLast)="editLastMessage()"
+    (escape)="escapeComposer()">
+    @if (pendingForward(); as sources) {
+      <div class="reply-context forward-context">
+        <button
+          type="button"
+          class="forward-target-button"
+          [title]="'messages.forward.changeTarget' | transloco"
+          (click)="changeForwardTarget()">
+          <ion-icon [icon]="selectionIcons.forward" />
+          <span class="forward-target-icon">
+            <ion-icon class="forward-target-upper" [icon]="selectionIcons.returnForward" />
+            <ion-icon class="forward-target-lower" [icon]="selectionIcons.returnBack" />
+          </span>
+        </button>
+        <div class="reply-description">
+          @if (sources.length === 1) {
+            @if (forwardPreview(); as preview) {
+              @let sender = preview.forwardedFrom?.sender ?? preview.sender;
+              <strong>{{ sender.name ?? sender.uid }}</strong>
+              <span><app-message-preview [message]="preview" /></span>
+            }
+          } @else {
+            @let participants = forwardParticipants();
+            @let first = participants[0].name ?? participants[0].uid;
+            <strong>
+              @switch (participants.length) {
+                @case (1) {
+                  {{ first }}
+                }
+                @case (2) {
+                  {{
+                    'messages.forward.twoParticipants'
+                      | transloco: { first, second: participants[1].name ?? participants[1].uid }
+                  }}
+                }
+                @default {
+                  {{ 'messages.forward.otherParticipants' | transloco: { first, count: participants.length - 1 } }}
+                }
+              }
+            </strong>
+            <span>{{ 'messages.forward.pendingCount' | transloco: { count: sources.length } }}</span>
+          }
+        </div>
+        <button type="button" class="reply-close" (click)="cancelForward()">
+          <ion-icon [icon]="closeIcon" />
+        </button>
+      </div>
+    } @else if (editing(); as edit) {
+      <div class="reply-context">
+        <ion-icon class="context-icon" [icon]="editing() ? editContextIcon : replyContextIcon" />
+        <div class="reply-description">
+          <strong>{{ 'conversation.editing' | transloco }}</strong>
+          <span><app-message-preview [message]="edit" /></span>
+        </div>
+        <button type="button" class="reply-close" (click)="cancelEdit()">
+          <ion-icon [icon]="closeIcon" />
+        </button>
+      </div>
+    } @else if (replyTo(); as message) {
+      <div class="reply-context">
+        <ion-icon class="context-icon" [icon]="editing() ? editContextIcon : replyContextIcon" />
+        <button
+          type="button"
+          class="reply-description"
+          [disabled]="!!pendingNavigation()"
+          (click)="goTo({ type: ConversationTargetKind.Message, messageId: message.id })">
+          <strong>
+            @if (message.forwardedFrom; as origin) {
+              <app-forwarded-label [name]="origin.sender.name" />
+            } @else {
+              {{ 'conversation.replyingTo' | transloco: { name: message.sender.name ?? message.sender.uid } }}
+            }
+          </strong>
+          <span><app-message-preview [message]="message" /></span>
+        </button>
+        <button type="button" class="reply-close" (click)="cancelReply()">
+          <ion-icon [icon]="closeIcon" />
+        </button>
+      </div>
+    } @else if (savedReplyId()) {
+      <div class="reply-context">
+        <ion-icon class="context-icon" [icon]="editing() ? editContextIcon : replyContextIcon" />
+        <div class="reply-description">
+          <strong>{{ 'conversation.reply' | transloco }}</strong>
+        </div>
+        <button type="button" class="reply-close" (click)="cancelReply()">
+          <ion-icon [icon]="closeIcon" />
+        </button>
+      </div>
+    }
+  </app-message-composer>
+</ion-footer>
+<ng-template #actions>
+  @if (canForwardTopic()) {
+    <ion-button [title]="'messages.forward.action' | transloco" (click)="openTopicForward()">
+      <ion-icon slot="icon-only" [icon]="toolbarIcons.forwardOutline" />
+    </ion-button>
+  }
+  <ion-button (click)="search()">
+    <ion-icon slot="icon-only" [icon]="toolbarIcons.searchOutline" />
+  </ion-button>
+  @if (threadAction(); as action) {
+    <ion-button [disabled]="threadUpdating()" (click)="updateThread()">
+      <span class="action-content" [class.busy]="threadUpdating()">
+        <ion-icon class="action-label action-icon" [icon]="action.icon" />
+        @if (threadUpdating()) {
+          <ion-spinner class="action-icon"></ion-spinner>
+        }
+      </span>
+    </ion-button>
+  } @else {
+    <ion-button [disabled]="muteBusy()" (click)="toggleMute()">
+      <ion-icon
+        class="action-icon"
+        slot="icon-only"
+        [icon]="muted() ? toolbarIcons.notificationsOffOutline : toolbarIcons.notificationsOutline" />
+    </ion-button>
+  }
+  <ion-button (click)="details()">
+    @if (largeScreen()) {
+      <svg class="sidebar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+        <rect x="3" y="4" width="18" height="16" rx="2" />
+        <path d="M15 4v16" />
+        @if (sidebarOpen()) {
+          <path d="M17 7h2v10h-2z" fill="currentColor" stroke="none" />
+        }
+      </svg>
+    } @else {
+      <ion-icon slot="icon-only" [icon]="infoIcon" />
+    }
+  </ion-button>
+</ng-template>
+
+<ion-popover #actionsMenu side="bottom" alignment="end" [arrow]="false" [dismissOnSelect]="true">
+  <ng-template>
+    <ion-list class="actions-menu" lines="none">
+      @if (canForwardTopic()) {
+        <ion-item [button]="true" (click)="openTopicForward()">
+          <ion-icon slot="start" [icon]="toolbarIcons.forwardOutline" />
+          <ion-label>{{ 'messages.forward.action' | transloco }}</ion-label>
+        </ion-item>
+      }
+      <ion-item [button]="true" (click)="search()">
+        <ion-icon slot="start" [icon]="toolbarIcons.searchOutline" />
+        <ion-label>{{ 'conversation.actions.search' | transloco }}</ion-label>
+      </ion-item>
+      @if (threadAction(); as action) {
+        <ion-item [button]="true" [disabled]="threadUpdating()" (click)="updateThread()">
+          <ion-icon slot="start" [icon]="action.icon" />
+          <ion-label>{{ action.label | transloco }}</ion-label>
+        </ion-item>
+      } @else if (!threadId()) {
+        <ion-item [button]="true" [disabled]="muteBusy()" (click)="toggleMute()">
+          <ion-icon
+            slot="start"
+            [icon]="muted() ? toolbarIcons.notificationsOffOutline : toolbarIcons.notificationsOutline" />
+          <ion-label>
+            {{ 'notificationPreferences.chatSettings' | transloco }}
+          </ion-label>
+        </ion-item>
+      }
+      <ion-item [button]="true" (click)="details()">
+        <ion-icon slot="start" [icon]="infoIcon" />
+        <ion-label>{{ 'conversation.actions.info' | transloco }}</ion-label>
+      </ion-item>
+    </ion-list>
+  </ng-template>
+</ion-popover>
+
+<app-message-menu
+  [allowSelect]="true"
+  (select)="beginSelection($event)"
+  [messages]="conversation.items()"
+  [chatId]="id()"
+  [threadId]="threadId()"
+  [canReply]="!editing() && canSendMessage()"
+  (reply)="startReply($event)"
+  (edit)="startEdit($event)"
+  (editQueued)="startEdit($event)"
+  (openThread)="openThread($event)"></app-message-menu>
+
+<app-chat-mute />
+<ion-toast #muteError [message]="'conversation.muteFailed' | transloco" [duration]="3000" />
+
+@if (forwardSources().length) {
+  <app-forward-picker [messages]="forwardSources()" (closed)="forwardSources.set([])" />
+}
+
+@if (topicForwardOpen()) {
+  <app-forward-picker [load]="loadTopicSources" (closed)="topicForwardOpen.set(false)" />
+}
+
+@if (forwardMove(); as move) {
+  <app-forward-picker [messages]="move.messages" [moveFrom]="move" (closed)="forwardMove.set(undefined)" />
+}
+
+<ion-alert
+  [isOpen]="!!pendingRecall()"
+  [header]="'messages.menu.confirm.recallTitle' | transloco"
+  [message]="
+    (chatTitle().isDm ? 'messages.selection.recallConfirmDm' : 'messages.selection.recallConfirm')
+      | transloco: { count: pendingRecall()?.length ?? 0 }
+  "
+  [buttons]="[
+    { text: ('common.cancel' | transloco), role: 'cancel' },
+    { text: ('common.confirm' | transloco), role: 'confirm' },
+  ]"
+  (didDismiss)="confirmRecallSelection($event)" />
+<ion-toast
+  [isOpen]="!!recallResult()"
+  [duration]="3000"
+  [message]="
+    recallResult()?.failed
+      ? ('messages.selection.recallFailed'
+        | transloco: { succeeded: recallResult()?.succeeded, failed: recallResult()?.failed })
+      : ('messages.selection.recalled' | transloco: { count: recallResult()?.succeeded })
+  "
+  (didDismiss)="recallResult.set(undefined)" />
+
+<ion-toast
+  [isOpen]="!!forwardError()"
+  [message]="forwardError() ? (forwardError()! | transloco) : ''"
+  [duration]="3000"
+  (didDismiss)="forwardError.set(undefined)" />

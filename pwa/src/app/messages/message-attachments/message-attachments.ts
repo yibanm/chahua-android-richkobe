@@ -1,0 +1,327 @@
+import { Router } from '@angular/router';
+import {
+  afterRenderEffect,
+  Component,
+  computed,
+  effect,
+  ElementRef,
+  inject,
+  input,
+  linkedSignal,
+  output,
+  signal,
+  viewChild,
+} from '@angular/core';
+import { TranslocoPipe } from '@jsverse/transloco';
+import { ContentScrollbars } from '../../scrolling/content-scrollbars';
+import { LocalDatePipe } from '../../i18n/local-date.pipe';
+import {
+  IonBadge,
+  IonIcon,
+  IonModal,
+  IonHeader,
+  IonToolbar,
+  IonTitle,
+  IonButtons,
+  IonButton,
+  IonContent,
+} from '@ionic/angular';
+import { alertCircleOutline, documentAttachOutline, downloadOutline, playCircle } from 'ionicons/icons';
+import { type MessageResponse, MessageType } from '../../../generated/models';
+import type { SnowflakeID } from '../../api/snowflake-id';
+import { openMediaViewer } from '../media-viewer/media-viewer';
+import { MessageArchive } from '../message-archive';
+import { MessageDelivery } from '../message-delivery';
+import { MessageStatus } from '../message-status/message-status';
+import { type AttachmentUpload, UploadStatus } from '../upload';
+import { UploadProgress } from '../upload-progress/upload-progress';
+import { UploadFailure } from '../upload-failure';
+import { type VoiceDock } from '../voice-player/voice-playback';
+import { VoicePlayer } from '../voice-player/voice-player';
+
+import { MediaLoaded } from '../media-loaded';
+import { albumLayout } from './album-layout';
+import { attachmentKind, MediaKind } from './media-kind';
+
+type Attachment = MessageResponse['attachments'][number];
+type Sticker = NonNullable<MessageResponse['sticker']>;
+export type MessageAttachmentSource = Pick<MessageResponse, 'messageType' | 'createdAt' | 'sender' | 'chatId'> & {
+  id?: SnowflakeID;
+  attachments: readonly (Pick<Attachment, 'url' | 'kind' | 'fileName' | 'size' | 'width' | 'height'> &
+    Partial<Pick<Attachment, 'id'>>)[];
+  sticker?: Pick<Sticker, 'id' | 'emoji' | 'name'> & {
+    media: Pick<Sticker['media'], 'url' | 'contentType' | 'width' | 'height'> & Partial<Pick<Sticker['media'], 'size'>>;
+  };
+};
+
+@Component({
+  selector: 'app-message-attachments',
+  templateUrl: './message-attachments.html',
+  styleUrl: './message-attachments.scss',
+  imports: [
+    ContentScrollbars,
+    MediaLoaded,
+    VoicePlayer,
+    IonBadge,
+    IonIcon,
+    IonModal,
+    IonHeader,
+    IonToolbar,
+    IonTitle,
+    IonButtons,
+    IonButton,
+    IonContent,
+    UploadProgress,
+    UploadFailure,
+    MessageStatus,
+    LocalDatePipe,
+    TranslocoPipe,
+  ],
+  host: {
+    '[class.overlay-time]': 'overlayTime()',
+    '[class.album]': 'album()',
+    '[class.visual]': 'visual()',
+    '[class.fill]': 'fill()',
+    '[style.width.px]': 'album() ? layout().intrinsicWidth : fillWidth()',
+    '[style.min-width.px]': 'minWidth()',
+  },
+})
+export class MessageAttachments {
+  private readonly router = inject(Router);
+  private readonly archive = inject(MessageArchive);
+  // 媒体本地归档的 objectURL：presigned url 会过期，命中归档时用它展示
+  private readonly localUrls = signal<ReadonlyMap<string, string>>(new Map());
+  /** 显示源：优先本地归档，未命中回退原 url。 */
+  protected readonly srcOf = (url: string) => this.localUrls().get(url) ?? url;
+  protected async view(key: SnowflakeID | string, event: Event) {
+    event.preventDefault();
+    if (this.message().messageType === MessageType.sticker) return;
+    event.stopPropagation();
+    const media = this.items().filter((item) => item.kind === MediaKind.Image || item.kind === MediaKind.Video);
+    await openMediaViewer(
+      this.router,
+      media,
+      media.findIndex((item) => (item.id ?? item.url) === key),
+    );
+  }
+  readonly message = input.required<MessageAttachmentSource>();
+  readonly dockEnabled = input(true);
+  readonly overlayTime = input(false);
+  readonly outgoing = input(false);
+  readonly delivery = input<MessageDelivery>();
+  readonly read = input(false);
+  readonly uploads = input<readonly AttachmentUpload[]>([]);
+  readonly retryUpload = output<AttachmentUpload>();
+  readonly removeUpload = output<AttachmentUpload>();
+  protected readonly showUploads = signal(false);
+  private readonly uploadsModal = viewChild(IonModal);
+  /** Only hidden tiles need the picker; visible failures already show their own icon. */
+  protected readonly hiddenUploadFailures = computed(() =>
+    this.items()
+      .slice(9)
+      .some((item) => !!item.upload?.state().error),
+  );
+  protected readonly failureIcon = alertCircleOutline;
+  protected async closeUploads() {
+    await this.uploadsModal()?.dismiss();
+  }
+  protected async more(key: SnowflakeID | string, event: Event): Promise<void> {
+    if (!this.hiddenUploadFailures()) return this.view(key, event);
+    event.preventDefault();
+    event.stopPropagation();
+    this.showUploads.set(true);
+  }
+  /** Confirmed messages hand their identity to the voice player so the docked bar can label and locate them. */
+  protected readonly dock = computed<VoiceDock | undefined>(() => {
+    const { id, chatId, sender, createdAt } = this.message();
+    return id && this.dockEnabled()
+      ? { messageId: id, chatId, label: sender.name ?? String(sender.uid), createdAt }
+      : undefined;
+  });
+  protected readonly MediaKind = MediaKind;
+  protected readonly items = computed(() => {
+    const message = this.message();
+    const sticker = message.messageType === MessageType.sticker ? message.sticker : undefined;
+    const attachments = sticker
+      ? [
+          {
+            ...sticker.media,
+            id: sticker.id,
+            kind: sticker.media.contentType,
+            fileName: sticker.name || sticker.emoji,
+          },
+        ]
+      : message.attachments;
+    return attachments.map((attachment) => {
+      const upload = this.uploads().find((upload) => upload.url === attachment.url);
+      const state = upload?.state();
+      const width = state?.width ?? attachment.width;
+      const height = state?.height ?? attachment.height;
+      // Older animated stickers and uploads can lack dimensions. Keep their fallback frame after loading.
+      const knownSize = width != null && height != null && width > 0 && height > 0;
+      const dimensions = knownSize ? { width, height } : { width: 240, height: 240 };
+      const limit = sticker ? 160 : 420;
+      return {
+        ...attachment,
+        upload,
+        kind: attachmentKind(message.messageType, attachment.kind),
+        sticker: !!sticker,
+        knownSize,
+        progress:
+          state?.status === UploadStatus.Processing || state?.status === UploadStatus.Uploading
+            ? state.progress
+            : undefined,
+        ...dimensions,
+        displayWidth: Math.min(dimensions.width, limit, (limit * dimensions.width) / dimensions.height),
+      };
+    });
+  });
+  protected readonly album = computed(() => {
+    const items = this.items();
+    return items.length > 1 && this.visual();
+  });
+  // 附件变化时异步查本地归档：presigned url 过期或被撤回后，媒体仍可从 IndexedDB 展示
+  protected readonly resolveLocalMedia = effect(() => {
+    const urls = this.items().map((item) => item.url).filter(Boolean);
+    if (!urls.length) return;
+    void Promise.all(urls.map((url) => this.archive.mediaObjectUrl(url).then((local) => [url, local] as const))).then(
+      (pairs) => {
+        const next = new Map(this.localUrls());
+        let changed = false;
+        for (const [url, local] of pairs) {
+          if (local && next.get(url) !== local) {
+            next.set(url, local);
+            changed = true;
+          }
+        }
+        if (changed) this.localUrls.set(next);
+      },
+    );
+  });
+  /** Images and videos stretch with the bubble; audio and files keep their own width. */
+  protected readonly visual = computed(() =>
+    this.items().every((item) => item.kind === MediaKind.Image || item.kind === MediaKind.Video),
+  );
+  /** A single known-size image or video fills the bubble width; images blur only the side gutters. */
+  protected readonly fill = computed(() => {
+    const items = this.items();
+    return !this.album() && items.length === 1 && this.visual() && items[0].knownSize && !items[0].sticker;
+  });
+  /** The unstretched display width gives the bubble its intrinsic size; flex-grow stretches beyond it.
+   *  A real width (not flex-basis) is required: flex-basis is ignored when sizing the flex container,
+   *  and the absolutely-positioned media contributes zero, collapsing media-only bubbles. */
+  protected readonly fillWidth = computed(() => (this.fill() ? this.items()[0].displayWidth : null));
+  /** A media-only image narrower than twice its time pill would bury the time; widen the bubble instead. */
+  private readonly timePill = viewChild('timePill', { read: ElementRef<HTMLElement> });
+  private readonly timePillWidth = signal(0);
+  protected readonly minWidth = computed(() => (this.overlayTime() && this.fill() ? 2 * this.timePillWidth() : null));
+  protected readonly visibleItems = computed(() => (this.album() ? this.items().slice(0, 9) : this.items()));
+  private readonly viewport = signal(
+    {
+      parentWidth: window.innerWidth,
+      displayHeight: window.innerHeight,
+      displayWidth: window.innerWidth,
+      scale: window.devicePixelRatio,
+    },
+    {
+      equal: (a, b) =>
+        a.parentWidth === b.parentWidth &&
+        a.displayHeight === b.displayHeight &&
+        a.displayWidth === b.displayWidth &&
+        a.scale === b.scale,
+    },
+  );
+  private readonly albumWidth = signal<number | undefined>(undefined);
+  private readonly albumSizes = linkedSignal({
+    source: this.items,
+    computation: (items, previous): { width: number; height: number }[] =>
+      items.map((item, index) => {
+        const old = previous?.source[index];
+        // Keep the initial frame, including the square fallback, while local media is processed.
+        return old && (old.id ?? old.url) === (item.id ?? item.url)
+          ? previous!.value[index]
+          : { width: item.width, height: item.height };
+      }),
+  });
+  protected readonly layout = computed(() => {
+    const viewport = this.viewport();
+    return albumLayout(
+      this.albumSizes().slice(0, 9),
+      this.albumWidth(),
+      viewport.scale,
+      {
+        displayMin: Math.min(viewport.displayWidth, viewport.displayHeight) * viewport.scale,
+        density: viewport.scale,
+        outgoing: this.outgoing(),
+        needShare: false,
+      },
+      viewport,
+    );
+  });
+
+  constructor() {
+    const host = inject<ElementRef<HTMLElement>>(ElementRef).nativeElement;
+    afterRenderEffect((onCleanup) => {
+      if (!this.album()) return;
+      const parent = host.closest('.chat-row');
+      const updateViewport = () =>
+        this.viewport.set({
+          parentWidth: parent?.getBoundingClientRect().width || window.innerWidth,
+          displayHeight: window.innerHeight,
+          displayWidth: window.innerWidth,
+          scale: window.devicePixelRatio,
+        });
+      updateViewport();
+      const width = host.getBoundingClientRect().width;
+      if (width) this.albumWidth.set(width);
+      const observer = new ResizeObserver((entries) => {
+        updateViewport();
+        const entry = entries.find((entry) => entry.target === host);
+        // Ionic also caches hidden pages whose measured width is zero.
+        if (entry?.contentRect.width) this.albumWidth.set(entry.contentRect.width);
+      });
+      observer.observe(host);
+      if (parent) observer.observe(parent);
+      window.addEventListener('resize', updateViewport);
+      onCleanup(() => {
+        observer.disconnect();
+        window.removeEventListener('resize', updateViewport);
+      });
+    });
+    effect((onCleanup) => {
+      const pill = this.timePill()?.nativeElement;
+      if (!pill) return;
+      const observer = new ResizeObserver(() => this.timePillWidth.set(pill.getBoundingClientRect().width));
+      observer.observe(pill);
+      onCleanup(() => observer.disconnect());
+    });
+  }
+
+  protected readonly failed = linkedSignal(() => {
+    this.message();
+    return new Set<SnowflakeID | string>();
+  });
+  protected readonly playIcon = playCircle;
+  protected readonly fileIcon = documentAttachOutline;
+  protected readonly downloadIcon = downloadOutline;
+
+  /**
+   * 媒体加载失败：立即进入失败态（保持上游行为与测试契约），同时异步查本地归档——
+   * presigned url 过期/被撤回的消息本地副本仍可展示，命中即撤掉失败标记换本地源。
+   * 测试环境无 IndexedDB，归档查询返回空，失败态不变。
+   */
+  protected fail(key: SnowflakeID | string) {
+    this.failed.update((failed) => new Set(failed).add(key));
+    const item = this.items().find((entry) => (entry.id ?? entry.url) === key);
+    if (!item?.url) return;
+    void this.archive.mediaObjectUrl(item.url).then((local) => {
+      if (!local) return;
+      this.localUrls.update((map) => new Map(map).set(item.url, local));
+      this.failed.update((failed) => {
+        const next = new Set(failed);
+        next.delete(key);
+        return next;
+      });
+    });
+  }
+}

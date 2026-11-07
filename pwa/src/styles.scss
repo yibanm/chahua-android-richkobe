@@ -1,0 +1,473 @@
+@use 'sass:meta';
+
+@import '@ionic/angular/css/core.css';
+@import 'overlayscrollbars/overlayscrollbars.css';
+
+@import '@ionic/angular/css/normalize.css';
+@import '@ionic/angular/css/structure.css';
+@import '@ionic/angular/css/typography.css';
+@import '@ionic/angular/css/display.css';
+
+@import '@ionic/angular/css/padding.css';
+@import '@ionic/angular/css/text-alignment.css';
+
+@import '@ionic/angular/css/palettes/dark.class.css';
+
+:root {
+  --ion-color-primary: #2b7acd;
+  --ion-color-primary-rgb: 43, 122, 205;
+  --ion-color-primary-contrast: #ffffff;
+  --ion-color-primary-contrast-rgb: 255, 255, 255;
+  --ion-color-primary-shade: #266bb4;
+  --ion-color-primary-tint: #4087d2;
+  --app-online-color: #4dc920;
+
+  // Font roles follow Ionic's root size: 16px on desktop, system Body on iOS.
+  --app-font-body: 0.875rem;
+  --app-line-body: 1.25rem;
+  --app-font-title: 0.875rem;
+  --app-font-secondary: 0.8125rem;
+  --app-line-secondary: 1.125rem;
+  --app-font-compact: 0.8125rem;
+  --app-line-compact: 1.0625rem;
+  --app-font-caption: 0.75rem;
+  --app-line-caption: 1rem;
+  --app-font-micro: 0.6875rem;
+  --app-line-micro: 0.875rem;
+  --app-font-heading: 1.25rem;
+  --app-line-heading: 1.625rem;
+  --app-item-height: 40px;
+  --app-item-spacing: 8px;
+  --app-chat-row-height: 60px;
+  --app-chat-avatar-size: 48px;
+  --app-reply-button-display: grid;
+  --app-composer-size: 36px;
+  --app-profile-padding: 24px 20px;
+  --app-quick-action-height: 56px;
+}
+
+html {
+  touch-action: pan-x pan-y;
+}
+
+ion-content::part(scroll) {
+  touch-action: pan-x pan-y;
+}
+
+html.plt-ios {
+  overflow: hidden;
+}
+
+// Operating system selects density; viewport width only selects columns.
+:root:is(.plt-ios, .plt-android) {
+  --app-font-base: 17;
+  --app-font-body: 1rem;
+  --app-line-body: calc(22rem / var(--app-font-base));
+  --app-font-title: calc(16rem / var(--app-font-base));
+  --app-font-secondary: calc(15rem / var(--app-font-base));
+  --app-line-secondary: calc(20rem / var(--app-font-base));
+  --app-font-compact: calc(14rem / var(--app-font-base));
+  --app-line-compact: calc(17rem / var(--app-font-base));
+  --app-font-caption: calc(13rem / var(--app-font-base));
+  --app-line-caption: calc(17rem / var(--app-font-base));
+  --app-font-micro: calc(11rem / var(--app-font-base));
+  --app-line-micro: calc(14rem / var(--app-font-base));
+  --app-font-heading: calc(22rem / var(--app-font-base));
+  --app-line-heading: calc(28rem / var(--app-font-base));
+  --app-item-height: 44px;
+  --app-item-spacing: 10px;
+  --app-chat-avatar-size: 52px;
+  --app-reply-button-display: none;
+  --app-composer-size: 40px;
+  --app-profile-padding: 32px 24px;
+  --app-quick-action-height: 64px;
+}
+:root.plt-android {
+  --app-font-base: 16;
+}
+
+body,
+ion-content,
+ion-item,
+ion-input,
+ion-textarea,
+ion-select,
+ion-toggle,
+ion-checkbox,
+ion-radio {
+  font-size: var(--app-font-body);
+  line-height: var(--app-line-body);
+}
+
+ion-title,
+ion-button,
+ion-back-button {
+  font-size: var(--app-font-body);
+}
+
+ion-button[size='small'],
+ion-segment-button {
+  font-size: var(--app-font-caption);
+}
+
+ion-item {
+  --min-height: var(--app-item-height);
+}
+
+ion-item > ion-label {
+  margin-block: var(--app-item-spacing);
+}
+
+ion-label.ios :is(h2, h3, h4, h5, h6) {
+  margin-block: 0 2px;
+  font-size: var(--app-font-title);
+  line-height: var(--app-line-body);
+  font-weight: 500;
+}
+
+ion-label.ios p {
+  font-size: var(--app-font-secondary);
+  line-height: var(--app-line-secondary);
+}
+
+ion-label.ios.ion-text-wrap {
+  font-size: inherit;
+  line-height: inherit;
+}
+
+ion-toggle::part(label),
+ion-radio::part(label),
+ion-checkbox::part(label) {
+  margin-block: var(--app-item-spacing);
+}
+
+ion-badge {
+  font-size: var(--app-font-micro);
+}
+
+ion-note {
+  font-size: var(--app-font-caption);
+  line-height: var(--app-line-caption);
+}
+
+ion-list-header {
+  font-size: var(--app-font-title);
+}
+
+ion-searchbar.ios .searchbar-input,
+ion-searchbar.ios .searchbar-cancel-button {
+  font-size: var(--app-font-body);
+}
+
+ion-alert.ios :is(.alert-title, .alert-button, .alert-radio-label, .alert-input) {
+  font-size: var(--app-font-body);
+  line-height: var(--app-line-body);
+}
+
+ion-alert.ios .alert-message {
+  font-size: var(--app-font-secondary);
+  line-height: var(--app-line-secondary);
+}
+
+ion-action-sheet.ios .action-sheet-button {
+  min-height: var(--app-item-height);
+  padding-block: var(--app-item-spacing);
+  font-size: var(--app-font-body);
+  line-height: var(--app-line-body);
+}
+
+// Profile headings share the same hierarchy across settings and chat/user information.
+.profile :is(h1, h2) {
+  margin-block: 12px 0;
+  font-size: var(--app-font-heading);
+  line-height: var(--app-line-heading);
+  font-weight: 600;
+}
+
+.profile p {
+  margin-block: 8px 0;
+  font-size: var(--app-font-secondary);
+  line-height: var(--app-line-secondary);
+}
+
+ion-modal.message-menu-modal,
+ion-modal.emoji-panel-modal,
+ion-modal.media-viewer-overlay {
+  --width: 100%;
+  --height: 100%;
+  --background: transparent;
+  --box-shadow: none;
+  --border-radius: 0;
+}
+
+ion-modal.message-menu-modal,
+ion-modal.emoji-panel-modal {
+  --backdrop-opacity: 1;
+}
+
+ion-modal.message-menu-modal::part(backdrop),
+ion-modal.emoji-panel-modal::part(backdrop) {
+  background: rgba(var(--ion-color-dark-rgb), 0.25);
+  opacity: 1;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+ion-modal.media-viewer-overlay {
+  --backdrop-opacity: 0;
+}
+
+// Retain Ionic's loading geometry; switching display interrupts native momentum with a layout.
+ion-infinite-scroll-content > .infinite-loading {
+  display: block;
+  visibility: hidden;
+}
+.infinite-scroll-loading ion-infinite-scroll-content > .infinite-loading {
+  visibility: visible;
+}
+
+.loading-status {
+  padding: 16px;
+  text-align: center;
+}
+
+// One centered block for a page's first content load; paging and refreshes use Ionic's own indicators.
+.page-loading {
+  display: grid;
+  place-items: center;
+  min-height: min(240px, 40vh);
+  padding: 24px;
+  pointer-events: none;
+}
+
+.skeleton-block {
+  background: var(--ion-background-color-step-100, #f0f0f0);
+  animation: skeleton-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes skeleton-pulse {
+  50% {
+    opacity: 0.55;
+  }
+}
+
+.message-list {
+  padding: 8px 0;
+}
+
+.message-date {
+  margin: 0;
+  padding: 12px 0 8px;
+  text-align: center;
+  font-size: var(--app-font-caption);
+  line-height: var(--app-line-caption);
+  font-weight: 500;
+  color: var(--ion-color-medium);
+
+  > span {
+    border-radius: 12px;
+    padding: 4px 12px;
+    background: rgba(var(--ion-text-color-rgb, 0, 0, 0), 0.08);
+    white-space: nowrap;
+  }
+}
+
+.floating-date {
+  top: 12px;
+  left: 50%;
+  border-radius: 12px;
+  padding: 4px 12px;
+  color: var(--ion-color-medium);
+  background: rgba(var(--ion-text-color-rgb, 0, 0, 0), 0.08);
+  font-size: var(--app-font-caption);
+  line-height: var(--app-line-caption);
+  font-weight: 500;
+  white-space: nowrap;
+  transform: translate(-50%, -6px);
+  z-index: 2;
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    opacity 200ms ease 1s,
+    transform 200ms ease 1s,
+    visibility 0s 1.2s;
+
+  &.scrolling {
+    opacity: 1;
+    visibility: visible;
+    transform: translate(-50%, 0);
+    transition-delay: 0s;
+  }
+  &.colliding {
+    visibility: hidden;
+    transition: none;
+  }
+}
+
+// Overlay the indicator without changing the control's dimensions.
+.action-content {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  min-height: 28px;
+  min-width: 28px;
+
+  &.busy > .action-label {
+    visibility: hidden;
+  }
+  > ion-spinner {
+    position: absolute;
+    pointer-events: none;
+  }
+}
+
+// Use the same box and Ionic slot for an action icon and its loading indicator.
+.action-icon {
+  width: 24px;
+  height: 24px;
+  font-size: 24px;
+  flex-shrink: 0;
+}
+ion-spinner.action-icon {
+  --color: var(--ion-text-color, #000);
+}
+.action-content.icon-content > :is(ion-icon, ion-spinner) {
+  width: 1em;
+  height: 1em;
+}
+
+input.field,
+textarea.field {
+  width: 100%;
+  min-height: var(--app-item-height);
+  padding: var(--app-item-spacing) 0;
+  border: 0;
+  outline: 0;
+  font: inherit;
+  color: inherit;
+  background: transparent;
+}
+
+// Ionic resets line-height inside its scoped textarea; the input and auto-grow mirror must agree.
+app-message-composer .input-wrapper .textarea-wrapper {
+  line-height: var(--app-line-body);
+}
+
+app-message-composer .input-wrapper .native-wrapper {
+  max-height: calc(33vh - var(--padding-top) - var(--padding-bottom));
+}
+
+app-message-composer .input-wrapper .input-row ion-textarea[auto-grow] .native-textarea {
+  overflow-y: auto;
+}
+
+// Ionic owns the shadow viewport's layout and overflow; only hide its native bars.
+ion-content.custom-scrollbars::part(scroll) {
+  scrollbar-width: none;
+}
+
+// Ionic's native textarea uses z-index: 1; its bars must remain above the input.
+ion-textarea.custom-scrollbars .os-scrollbar {
+  z-index: 2;
+}
+
+:where([appScrollbars].custom-scrollbars) {
+  position: relative;
+}
+
+app-emoji-picker nicematic-grid > div {
+  position: relative;
+}
+
+.os-scrollbar {
+  --os-size: 12px;
+  --os-padding-perpendicular: 3px;
+  --os-handle-perpendicular-size: 3px;
+  --os-handle-perpendicular-size-hover: 6px;
+  --os-handle-perpendicular-size-active: 6px;
+  --os-handle-bg: rgba(var(--ion-text-color-rgb, 0, 0, 0), 0.25);
+  --os-handle-bg-hover: rgba(var(--ion-text-color-rgb, 0, 0, 0), 0.5);
+  --os-handle-bg-active: rgba(var(--ion-text-color-rgb, 0, 0, 0), 0.65);
+}
+
+// Ionic's item line belongs between rows, including rows wrapped by our shared component.
+ion-list > ion-item:last-child,
+ion-list > ion-item-sliding:last-child ion-item,
+ion-list > app-chat-list-item:last-child ion-item {
+  --inner-border-width: 0;
+  --border-width: 0;
+}
+
+.action-sheet-button.mute-permanent {
+  color: var(--ion-color-danger);
+}
+
+// Toasts belong to the page, not to the component that declares them, and stay a compact centered
+// pill clear of the footer; the composer publishes its height for the bottom offset.
+ion-toast {
+  position: fixed;
+  --width: fit-content;
+  --max-width: calc(100% - 32px);
+
+  &::part(message) {
+    text-align: center;
+    width: auto;
+  }
+
+  &::part(button) {
+    flex-shrink: 0;
+  }
+
+  &::part(wrapper) {
+    bottom: calc(var(--app-footer-height, 0px) + 8px);
+  }
+}
+
+// These elements are created by Ionic outside Angular's template style scope.
+ion-alert.notification-prompt {
+  .alert-wrapper {
+    outline: none;
+  }
+
+  .notification-allow {
+    position: relative;
+  }
+
+  &.requesting .notification-allow .alert-button-inner {
+    visibility: hidden;
+  }
+}
+
+.avatar-placeholder {
+  --avatar-background: light-dark(var(--avatar-light), var(--avatar-dark));
+}
+
+// highlight.js creates spans outside Angular's component style scope.
+app-markdown-body pre {
+  @include meta.load-css('highlight.js/styles/github');
+}
+
+.ion-palette-dark app-markdown-body pre {
+  @include meta.load-css('highlight.js/styles/github-dark');
+}
+
+app-markdown-body pre code.hljs {
+  padding: 0;
+  background: none;
+  overflow-x: visible;
+}
+
+// The same panel instance becomes a non-blocking information column on wide screens.
+ion-modal.route-panel.panel-sidebar {
+  inset-inline-start: auto;
+  width: 360px;
+  --width: 360px;
+  --height: 100%;
+  --border-radius: 0;
+  --box-shadow: none;
+  border-inline-start: 1px solid var(--ion-color-light-shade);
+}
+app-panel-page[hidden] {
+  display: none;
+}

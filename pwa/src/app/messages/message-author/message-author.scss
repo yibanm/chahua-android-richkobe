@@ -1,0 +1,42 @@
+:host {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 2px;
+  font-size: var(--app-font-compact);
+  line-height: var(--app-line-compact);
+  font-weight: 600;
+}
+.sender-name {
+  flex-grow: 1;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--sender-color);
+}
+.sender-group {
+  background: light-dark(
+    var(--group-light, rgba(var(--ion-text-color-rgb), 0.25)),
+    var(--group-dark, var(--group-light, rgba(var(--ion-text-color-rgb), 0.25)))
+  );
+  color: var(--ion-color-primary-contrast);
+  padding: 0 5px;
+  border-radius: 2px;
+  font-size: 10px;
+  line-height: 1.4;
+  white-space: nowrap;
+  opacity: 0.85;
+}
+.gender {
+  flex-shrink: 0;
+  color: #3cb4f0;
+}
+.female {
+  color: #ff8080;
+}
+:host(.own) .sender-name {
+  color: inherit;
+}
+:host(.own) .sender-group {
+  background: rgba(var(--ion-color-primary-contrast-rgb), 0.25);
+}

@@ -1,0 +1,232 @@
+:host {
+  --composer-padding-start: 12px;
+  --composer-control-size: var(--app-composer-size);
+  // Keep the bar's vertical margins inside the background during page transitions.
+  display: flow-root;
+  position: relative;
+  padding-bottom: var(--ion-safe-area-bottom, 0px);
+  background: var(--ion-background-color, #fff);
+}
+:host::after {
+  content: '';
+  position: absolute;
+  inset: 4px;
+  z-index: 1;
+  border: 2px dashed var(--ion-color-primary);
+  border-radius: 12px;
+  background: rgba(var(--ion-color-primary-rgb), 0.08);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 120ms;
+}
+:host(.drag-over)::after {
+  opacity: 1;
+}
+.uploads {
+  display: flex;
+  overflow-x: auto;
+  gap: 8px;
+  padding: 8px;
+}
+.upload {
+  position: relative;
+  display: grid;
+  place-items: center;
+  flex: 0 0 88px;
+  height: 88px;
+  overflow: hidden;
+  border-radius: 8px;
+  background: var(--ion-color-light);
+  color: var(--ion-color-primary);
+}
+.upload img,
+.upload video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.file-icon {
+  font-size: 32px;
+}
+.video-icon {
+  position: absolute;
+  bottom: 4px;
+  left: 4px;
+  color: #fff;
+  filter: drop-shadow(0 1px 2px #000);
+  font-size: 20px;
+}
+.upload-status {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgba(0, 0, 0, 0.45);
+  color: #fff;
+}
+.upload-remove {
+  position: absolute;
+  z-index: 3;
+  top: 4px;
+  right: 4px;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  font-size: 20px;
+}
+.mentions {
+  max-height: 200px;
+  overflow: auto;
+  margin: 0;
+  border: 1px solid var(--ion-background-color-step-200, var(--ion-color-light-shade));
+  border-bottom: none;
+  border-radius: 12px 12px 0 0;
+  box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.12);
+}
+
+.mentions ion-item {
+  --min-height: 44px;
+  --padding-start: 12px;
+  --inner-padding-end: 12px;
+  font-size: 14px;
+  text-align: start;
+}
+
+.mentions app-chat-avatar {
+  margin-inline-end: 8px;
+}
+
+.bar {
+  margin: 8px 12px;
+  padding: 2px;
+  border: 1px solid var(--ion-background-color-step-200, var(--ion-color-light-shade));
+  border-radius: calc(var(--composer-control-size) / 2 + 3px);
+}
+.compose-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+}
+.attach-button,
+.sticker-button {
+  display: grid;
+  place-items: center;
+  background: none;
+  flex-shrink: 0;
+  height: calc(var(--composer-control-size) - 2px);
+}
+.attach-button {
+  height: var(--composer-control-size);
+  width: var(--composer-control-size);
+  font-size: 28px;
+  color: var(--ion-color-primary);
+}
+.attach-button ion-icon {
+  transform: rotate(45deg);
+}
+.sticker-button {
+  width: 32px;
+  font-size: 22px;
+  color: var(--ion-color-medium);
+}
+.sticker-button.selected {
+  color: var(--ion-color-primary);
+}
+.attach-button:disabled,
+.sticker-button:disabled {
+  color: var(--ion-color-medium);
+}
+.input-wrapper {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: var(--composer-control-size);
+  overflow: hidden;
+}
+.input-wrapper[hidden] {
+  display: none;
+}
+ion-textarea {
+  flex: 1;
+  min-width: 0;
+  min-height: calc(var(--composer-control-size) - 2px);
+  --padding-top: calc((var(--composer-control-size) - 2px - var(--app-line-body)) / 2);
+  --padding-bottom: var(--padding-top);
+  --padding-start: var(--composer-padding-start);
+  --padding-end: 4px;
+}
+.action-slot {
+  width: var(--composer-control-size);
+  flex-shrink: 0;
+  display: flex;
+  justify-content: center;
+}
+.send-button {
+  width: var(--composer-control-size);
+  height: var(--composer-control-size);
+  border-radius: 50%;
+  background: var(--ion-color-primary);
+  color: var(--ion-color-primary-contrast);
+  display: grid;
+  place-items: center;
+  font-size: 18px;
+}
+.send-button ion-icon {
+  transform: translateX(1.5px);
+}
+.send-button:disabled {
+  background: var(--ion-color-medium);
+  color: var(--ion-color-medium-contrast);
+}
+button:disabled {
+  opacity: 0.45;
+}
+.actions-menu {
+  padding-block: 4px;
+}
+.input-row {
+  display: flex;
+  align-items: flex-end;
+  min-width: 0;
+  padding-right: 4px;
+}
+
+.mentions ion-item.selected {
+  --background: var(--ion-color-light);
+}
+
+.attachment-menu {
+  inset: auto;
+  width: 160px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: var(--ion-background-color);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+  transform: translateY(-100%);
+}
+
+.sticker-panel.docked {
+  position: fixed;
+  inset-block: 0;
+  inset-inline-end: 0;
+  width: 360px;
+  display: flex;
+  flex-direction: column;
+  padding-bottom: var(--ion-safe-area-bottom, 0px);
+  border-inline-start: 1px solid var(--ion-background-color-step-200, var(--ion-color-light-shade));
+  background: var(--ion-background-color);
+
+  app-sticker-picker {
+    --sticker-picker-height: auto;
+    flex: 1;
+    min-height: 0;
+  }
+}

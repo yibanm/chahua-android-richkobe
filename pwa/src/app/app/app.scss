@@ -1,0 +1,158 @@
+ion-split-pane {
+  --side-width: 384px;
+  --side-min-width: 384px;
+  --side-max-width: 384px;
+}
+
+.entry-status {
+  display: grid;
+  // safe center：内容超出容器高度时回退为顶对齐，避免居中溢出把登录控件推出可视区
+  place-items: safe center;
+  min-height: 100%;
+}
+
+.entry-status-content {
+  width: 100%;
+  max-width: 360px;
+}
+
+.entry-description {
+  color: var(--ion-color-medium);
+}
+
+.entry-brand {
+  display: block;
+  margin: 0 auto 12px;
+}
+
+.entry-indicator {
+  height: 24px;
+}
+
+.entry-status h1 {
+  font-size: 22px;
+  margin: 12px 0 8px;
+}
+
+.entry-description {
+  min-height: 40px;
+  line-height: 1.6;
+  margin: 0;
+}
+
+.entry-actions {
+  min-height: 40px;
+  margin-top: 12px;
+}
+
+// 测试包构建标识：小字灰显，不影响主界面观感
+.entry-build-tag {
+  margin: 0 0 8px;
+  font-size: 11px;
+  color: var(--ion-color-medium);
+  text-align: right;
+}
+
+.entry-paste {
+  margin-top: 16px;
+  text-align: left;
+}
+
+.entry-paste-hint {
+  color: var(--ion-color-medium);
+  font-size: 14px;
+  margin: 0 0 8px;
+}
+
+.entry-paste-hint--ok {
+  color: var(--ion-color-success);
+}
+
+// 登录进度：条与百分数同一行，宽度跟随容器（与按钮同宽），不另起布局
+.entry-progress {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 4px 0 0;
+
+  ion-progress-bar {
+    flex: 1;
+  }
+}
+
+.entry-progress-pct {
+  flex: none;
+  width: 3.2em;
+  text-align: right;
+  font-size: 12px;
+  color: var(--ion-color-medium);
+  font-variant-numeric: tabular-nums;
+}
+
+// ion-input 的 outline fill 需要显式给容器描边，否则在深色主题下不可见。
+// 背景手动设成白色后，前景必须同批改深色：Ionic 默认字色跟随暗色主题是白色，
+// 白底白字会完全看不见输入内容（用户实测复现，已多次犯同类错）。
+.entry-paste-input {
+  --background: var(--ion-color-step-50, #ffffff);
+  --color: #111111;
+  --placeholder-color: #767676;
+  --border-color: var(--ion-color-step-300, #999999);
+  --border-radius: 8px;
+  --border-width: 1px;
+  --border-style: solid;
+  --padding-start: 12px;
+  --padding-end: 12px;
+  min-height: 44px;
+}
+
+// 账号密码表单第二个输入框（密码）与用户名框之间留间距
+.entry-paste-input--second {
+  margin-top: 10px;
+}
+
+.entry-paste-error {
+  color: var(--ion-color-danger);
+  font-size: 13px;
+  margin: 6px 0 0;
+}
+
+.entry-paste-button {
+  margin-top: 12px;
+}
+
+// 立体感：投影 + 按压反馈，避免默认扁平按钮"像没反应"
+.entry-paste-button--primary {
+  --box-shadow: 0 4px 14px rgb(0 0 0 / 35%);
+  box-shadow: 0 4px 14px rgb(0 0 0 / 35%);
+  transition:
+    transform 0.08s ease,
+    box-shadow 0.08s ease,
+    filter 0.08s ease;
+
+  &:active {
+    transform: translateY(1px) scale(0.985);
+    box-shadow: 0 2px 6px rgb(0 0 0 / 30%);
+    filter: brightness(0.92);
+  }
+
+  &:hover:not([disabled]) {
+    filter: brightness(1.06);
+  }
+}
+
+.entry-paste-link {
+  margin: 12px 0 0;
+  font-size: 13px;
+  text-align: center;
+  color: var(--ion-color-medium);
+
+  a {
+    color: var(--ion-color-primary);
+    cursor: pointer;
+    text-decoration: none;
+
+    &:hover {
+      text-decoration: underline;
+    }
+  }
+}

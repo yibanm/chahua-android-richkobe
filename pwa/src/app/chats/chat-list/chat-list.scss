@@ -1,0 +1,38 @@
+ion-avatar {
+  position: relative;
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  color: var(--ion-color-primary-contrast);
+  font-size: 15px;
+}
+
+ion-segment {
+  width: 100%;
+  max-width: 400px;
+}
+
+ion-segment-button {
+  --padding-start: initial;
+  --padding-end: initial;
+  min-width: 0;
+}
+
+.tab-pages {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.tab-page {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+
+  &:not([hidden]) {
+    display: flex;
+  }
+}
