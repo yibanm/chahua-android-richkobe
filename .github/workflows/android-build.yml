@@ -68,9 +68,20 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
+      # 主签名密钥经 secrets 通道注入（CLAUDE.md 0.10：同密钥保证覆盖安装升级）。
+      # 密钥内容不落仓库、不进日志；base64 解码到 runner 临时目录，构建结束随 runner 销毁。
+      - name: Decode keystore
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > /tmp/release.jks
+
       - name: Build APKs (arm64-v8a + armeabi-v7a)
         env:
           TAURI_ANDROID_NDK_VERSION: '27.0.12077973'
+          ANDROID_KEYSTORE_PATH: /tmp/release.jks
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
         run: npx tauri android build --apk --target aarch64 --target armv7
 
       - name: Collect artifacts
